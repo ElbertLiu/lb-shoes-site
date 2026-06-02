@@ -4,6 +4,7 @@ export interface Product {
   brief: string;
   price: string;
   inStock: boolean;
+  featured: boolean;
   category: string;
   images: string[];
 }
@@ -11,10 +12,4 @@ export interface Product {
 export interface Category {
   id: string;
   name: string;
-}
-
-export interface Banner {
-  id: string;
-  imageUrl: string;
-  link: string;
 }

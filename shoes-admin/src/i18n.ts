@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, ReactNode, useContext } from 'react';
+import { computed, ref } from 'vue';
 
 export const languages = {
   zh: "中文",
@@ -512,72 +512,56 @@ export const translations = {
   }
 } as const;
 
-interface LanguageContextType {
-  lang: LanguageCode;
-  setLang: (lang: LanguageCode) => void;
-  langObj: any;
-  t: (path: string, params?: Record<string, string | number>) => any;
-}
+const applyRtl = (l: string) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
+  document.documentElement.lang = l;
+};
 
-export const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+const initialLang = (() => {
+  if (typeof localStorage === 'undefined') {
+    return 'zh';
+  }
+  const saved = localStorage.getItem('appLang') as LanguageCode | null;
+  return saved && languages[saved] ? saved : 'zh';
+})();
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<LanguageCode>('zh');
+const lang = ref<LanguageCode>(initialLang);
+applyRtl(lang.value);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('appLang') as LanguageCode;
-    if (saved && languages[saved]) {
-      setLang(saved);
-      applyRtl(saved);
+const setLang = (newLang: LanguageCode) => {
+  lang.value = newLang;
+  localStorage.setItem('appLang', newLang);
+  applyRtl(newLang);
+};
+
+const t = (path: string, params?: Record<string, string | number>) => {
+  const keys = path.split('.');
+  let current: any = translations[lang.value];
+  for (const key of keys) {
+    if (!current || current[key] === undefined) {
+      return path;
     }
-  }, []);
+    current = current[key];
+  }
 
-  const applyRtl = (l: string) => {
-    if (l === 'ar') {
-      document.documentElement.dir = 'rtl';
-    } else {
-      document.documentElement.dir = 'ltr';
-    }
-    document.documentElement.lang = l;
-  };
-
-  const handleSetLang = (newLang: LanguageCode) => {
-    setLang(newLang);
-    localStorage.setItem('appLang', newLang);
-    applyRtl(newLang);
-  };
-
-  const t = (path: string, params?: Record<string, string | number>) => {
-    const keys = path.split('.');
-    let current: any = translations[lang];
-    for (const key of keys) {
-      if (!current || current[key] === undefined) {
-        return path;
-      }
-      current = current[key];
-    }
-    
-    if (typeof current === 'string' && params) {
-      let result = current;
-      Object.entries(params).forEach(([key, val]) => {
-        result = result.replace(new RegExp(`{${key}}`, 'g'), String(val));
-      });
-      return result;
-    }
-    return current;
-  };
-
-  return (
-    <LanguageContext.Provider value={{ lang, setLang: handleSetLang, t, langObj: translations[lang] }}>
-      {children}
-    </LanguageContext.Provider>
-  );
-}
+  if (typeof current === 'string' && params) {
+    let result = current;
+    Object.entries(params).forEach(([key, val]) => {
+      result = result.replace(new RegExp(`{${key}}`, 'g'), String(val));
+    });
+    return result;
+  }
+  return current;
+};
 
 export function useLanguage() {
-  const context = useContext(LanguageContext);
-  if (!context) {
-    throw new Error('useLanguage must be used within a LanguageProvider');
-  }
-  return context;
+  return {
+    lang,
+    setLang,
+    t,
+    langObj: computed(() => translations[lang.value]),
+  };
 }

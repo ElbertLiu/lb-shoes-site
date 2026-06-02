@@ -1,11 +1,11 @@
 import { Product, Category } from './types';
 
 export const categories: Category[] = [
-  { id: 'c1', name: 'c1' },
-  { id: 'c2', name: 'c2' },
-  { id: 'c3', name: 'c3' },
-  { id: 'c4', name: 'c4' },
-  { id: 'c5', name: 'c5' },
+  { id: 'c1', name: '运动鞋' },
+  { id: 'c2', name: '户外鞋' },
+  { id: 'c3', name: '凉鞋' },
+  { id: 'c4', name: '休闲鞋' },
+  { id: 'c5', name: '皮鞋' },
 ];
 
 export const generateProducts = (count: number): Product[] => {
@@ -22,6 +22,7 @@ export const generateProducts = (count: number): Product[] => {
       brief: styleEn, // Will generate dynamical name in rendering
       price: `$${(Math.random() * 20 + 10).toFixed(2)} - $${(Math.random() * 30 + 30).toFixed(2)}`,
       inStock: Math.random() > 0.2,
+      featured: i <= 20,
       category: category,
       images: [
         `https://images.unsplash.com/photo-1542291026-7eec264c27ff?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w1MTY0NTR8MHwxfHNlYXJjaHwxfHxzaG9lc3xlbnwwfHx8fDE3MTI0NTgwMzh8MA&ixlib=rb-4.0.3&q=80&w=400`,
