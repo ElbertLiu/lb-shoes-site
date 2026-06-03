@@ -3,6 +3,7 @@ import type { Category } from '../types';
 import { categories as defaultCategories } from '../data';
 
 import { API_BASE_URL } from '../utils/api';
+import { getAuthHeaders, logout } from './auth';
 
 const categories = ref<Category[]>([...defaultCategories]);
 let lastSerialized = JSON.stringify(categories.value);
@@ -45,9 +46,12 @@ export async function writeCategories(nextCategories: Category[]) {
 
   const response = await fetch(`${API_BASE_URL}/categories`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(normalized),
   });
+  if (response.status === 401) {
+    logout();
+  }
   if (!response.ok) {
     throw new Error('Failed to save categories');
   }

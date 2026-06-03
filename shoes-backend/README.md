@@ -14,6 +14,8 @@ The API defaults to `http://localhost:4000`.
 ## Endpoints
 
 - `GET /health`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 - `GET /api/categories`
 - `PUT /api/categories`
 - `POST /api/categories`
@@ -31,3 +33,6 @@ The API defaults to `http://localhost:4000`.
 Data is stored in `data/db.json` and seeded automatically on first run.
 Uploaded images are stored in `data/uploads` by default and served from `/uploads`.
 For production, mount `UPLOAD_DIR` on persistent storage or replace the upload handler with object storage. Product records should keep the returned `path` value, for example `/uploads/xxx.webp`.
+
+Write endpoints and image uploads require `Authorization: Bearer <token>` from `POST /api/auth/login`.
+Change `ADMIN_PASSWORD` and `AUTH_SECRET` before exposing the backend publicly.

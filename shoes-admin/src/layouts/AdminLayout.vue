@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { House, ShoppingBag } from '@element-plus/icons-vue';
+import { House, ShoppingBag, SwitchButton } from '@element-plus/icons-vue';
 import { useLanguage } from '../i18n';
+import { useAuth } from '../stores/auth';
 
 const route = useRoute();
 const router = useRouter();
 const { t, lang } = useLanguage();
+const { username, logout } = useAuth();
 const frontendUrl = import.meta.env.VITE_FRONTEND_URL || 'http://localhost:3000';
 const direction = computed(() => lang.value === 'ar' ? 'rtl' : 'ltr');
 const menu = computed(() => [
@@ -15,6 +17,10 @@ const menu = computed(() => [
 ]);
 
 const handleSelect = (path: string) => router.push(path);
+const handleLogout = () => {
+  logout();
+  router.replace('/login');
+};
 </script>
 
 <template>
@@ -36,7 +42,9 @@ const handleSelect = (path: string) => router.push(path);
         <span class="text-sm text-[#606266]">{{ t('admin.system') }}</span>
         <div class="flex items-center gap-4 text-sm text-[#606266]">
           <a :href="frontendUrl" class="transition-colors hover:text-[#409eff]">{{ t('admin.goBack') }}</a>
-          <el-avatar :size="32">A</el-avatar>
+          <span>{{ username || 'admin' }}</span>
+          <el-avatar :size="32">{{ (username || 'A').slice(0, 1).toUpperCase() }}</el-avatar>
+          <el-button text :icon="SwitchButton" @click="handleLogout">退出</el-button>
         </div>
       </el-header>
 

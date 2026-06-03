@@ -1,0 +1,9 @@
+{
+  "name": "ShoeFactory",
+  "short_name": "ShoeFactory",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "description": "Direct shoe factory website for global buyers."
+}

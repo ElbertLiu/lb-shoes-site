@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
 import multer from 'multer';
@@ -15,6 +15,10 @@ const port = Number(process.env.PORT || 4000);
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.resolve(__dirname, '../data/uploads'));
 const uploadPublicPath = process.env.UPLOAD_PUBLIC_PATH || '/uploads';
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 8 * 1024 * 1024);
+const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+const adminPassword = process.env.ADMIN_PASSWORD || 'admin123456';
+const authSecret = process.env.AUTH_SECRET || randomUUID();
+const authTokenTtlSeconds = Number(process.env.AUTH_TOKEN_TTL_SECONDS || 60 * 60 * 12);
 const origins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3001')
   .split(',')
   .map((origin) => origin.trim())
@@ -66,6 +70,59 @@ function badRequest(message: string) {
   return { error: message };
 }
 
+function base64url(input: string | Buffer) {
+  return Buffer.from(input).toString('base64url');
+}
+
+function safeCompare(a: string, b: string) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function signToken(payload: Record<string, unknown>) {
+  const body = base64url(JSON.stringify(payload));
+  const signature = createHmac('sha256', authSecret).update(body).digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyToken(token: string) {
+  const [body, signature] = token.split('.');
+  if (!body || !signature) {
+    return null;
+  }
+
+  const expectedSignature = createHmac('sha256', authSecret).update(body).digest('base64url');
+  if (!safeCompare(signature, expectedSignature)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf-8')) as { exp?: number; sub?: string };
+    if (!payload.exp || payload.exp * 1000 < Date.now() || payload.sub !== adminUsername) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getBearerToken(req: express.Request) {
+  const header = req.get('authorization') || '';
+  const [scheme, token] = header.split(' ');
+  return scheme?.toLowerCase() === 'bearer' ? token : '';
+}
+
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const token = getBearerToken(req);
+  if (!token || !verifyToken(token)) {
+    res.status(401).json({ error: '请先登录后台' });
+    return;
+  }
+  next();
+}
+
 function normalizeImages(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
@@ -115,7 +172,30 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'shoes-backend' });
 });
 
-app.post('/api/uploads/images', upload.array('images', 12), async (req, res, next) => {
+app.post('/api/auth/login', (req, res) => {
+  const body = req.body as { username?: unknown; password?: unknown };
+  const username = typeof body.username === 'string' ? body.username.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
+  if (!safeCompare(username, adminUsername) || !safeCompare(password, adminPassword)) {
+    res.status(401).json({ error: '账号或密码错误' });
+    return;
+  }
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const expiresAt = issuedAt + authTokenTtlSeconds;
+  res.json({
+    token: signToken({ sub: adminUsername, iat: issuedAt, exp: expiresAt }),
+    user: { username: adminUsername },
+    expiresAt,
+  });
+});
+
+app.get('/api/auth/me', requireAuth, (_req, res) => {
+  res.json({ user: { username: adminUsername } });
+});
+
+app.post('/api/uploads/images', requireAuth, upload.array('images', 12), async (req, res, next) => {
   try {
     const files = (req.files || []) as Express.Multer.File[];
     if (!files.length) {
@@ -155,7 +235,7 @@ app.get('/api/categories', async (_req, res, next) => {
   }
 });
 
-app.put('/api/categories', async (req, res, next) => {
+app.put('/api/categories', requireAuth, async (req, res, next) => {
   try {
     if (!Array.isArray(req.body)) {
       res.status(400).json(badRequest('分类数据必须是数组'));
@@ -174,7 +254,7 @@ app.put('/api/categories', async (req, res, next) => {
   }
 });
 
-app.post('/api/categories', async (req, res, next) => {
+app.post('/api/categories', requireAuth, async (req, res, next) => {
   try {
     const category = parseCategory(req.body);
     if (!category) {
@@ -194,7 +274,7 @@ app.post('/api/categories', async (req, res, next) => {
   }
 });
 
-app.put('/api/categories/:id', async (req, res, next) => {
+app.put('/api/categories/:id', requireAuth, async (req, res, next) => {
   try {
     const database = await readDatabase();
     const existing = database.categories.find((item) => item.id === req.params.id);
@@ -214,7 +294,7 @@ app.put('/api/categories/:id', async (req, res, next) => {
   }
 });
 
-app.delete('/api/categories/:id', async (req, res, next) => {
+app.delete('/api/categories/:id', requireAuth, async (req, res, next) => {
   try {
     const database = await readDatabase();
     if (database.products.some((product) => product.category === req.params.id)) {
@@ -253,7 +333,7 @@ app.get('/api/products', async (req, res, next) => {
   }
 });
 
-app.put('/api/products', async (req, res, next) => {
+app.put('/api/products', requireAuth, async (req, res, next) => {
   try {
     if (!Array.isArray(req.body)) {
       res.status(400).json(badRequest('产品数据必须是数组'));
@@ -286,7 +366,7 @@ app.get('/api/products/:id', async (req, res, next) => {
   }
 });
 
-app.post('/api/products', async (req, res, next) => {
+app.post('/api/products', requireAuth, async (req, res, next) => {
   try {
     const product = parseProduct(req.body);
     if (!product) {
@@ -306,7 +386,7 @@ app.post('/api/products', async (req, res, next) => {
   }
 });
 
-app.put('/api/products/:id', async (req, res, next) => {
+app.put('/api/products/:id', requireAuth, async (req, res, next) => {
   try {
     const database = await readDatabase();
     const existing = database.products.find((item) => item.id === req.params.id);
@@ -326,7 +406,7 @@ app.put('/api/products/:id', async (req, res, next) => {
   }
 });
 
-app.patch('/api/products/:id', async (req, res, next) => {
+app.patch('/api/products/:id', requireAuth, async (req, res, next) => {
   try {
     const database = await readDatabase();
     const existing = database.products.find((item) => item.id === req.params.id);
@@ -352,7 +432,7 @@ app.patch('/api/products/:id', async (req, res, next) => {
   }
 });
 
-app.delete('/api/products/:id', async (req, res, next) => {
+app.delete('/api/products/:id', requireAuth, async (req, res, next) => {
   try {
     const nextDatabase = await updateDatabase((current) => ({
       ...current,

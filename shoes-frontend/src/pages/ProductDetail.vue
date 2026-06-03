@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, MessageCircle, Share2 } from 'lucide-vue-next';
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-vue-next';
 import ClientLayout from '../layouts/ClientLayout.vue';
 import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
@@ -15,6 +15,8 @@ const { getCategoryName } = useCategories();
 const { products } = useProducts();
 const { success } = useToast();
 const currentImageIndex = ref(0);
+const whatsappContact = '+86 138-0000-0000';
+const facebookContact = 'ShoeFactory123';
 const product = computed(() => products.value.find((p) => p.id === route.params.id));
 const isRtl = computed(() => lang.value === 'ar');
 
@@ -97,13 +99,23 @@ const copyToClipboard = async (text: string) => {
 
           <div class="mt-auto flex flex-col gap-3">
             <p class="mb-1 text-center text-xs text-gray-400 lg:text-left rtl:lg:text-right">{{ t('product.contactTip') }}</p>
-            <button class="group relative flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 py-4 font-medium text-white shadow-sm transition-colors hover:bg-gray-800 hover:shadow-md" @click="copyToClipboard('+86 138-0000-0000')">
-              <MessageCircle class="h-5 w-5 ltr:mr-1 rtl:ml-1 rtl:mr-0" />
-              {{ t('product.copyWhatsapp') }}
+            <button class="group relative flex w-full items-center justify-center gap-3 rounded-xl bg-[#25D366] px-4 py-4 text-white shadow-sm transition-colors hover:bg-[#1DA851] hover:shadow-md" @click="copyToClipboard(whatsappContact)">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="h-6 w-6 shrink-0 fill-current">
+                <path d="M12.04 2a9.86 9.86 0 0 0-8.45 14.94L2.42 22l5.19-1.14A9.86 9.86 0 1 0 12.04 2Zm0 1.82a8.04 8.04 0 0 1 6.8 12.33 8.04 8.04 0 0 1-10.7 2.76l-.33-.18-3.08.68.7-3-.2-.35a8.04 8.04 0 0 1 6.81-12.24Zm-3.44 4.4c-.18 0-.48.07-.73.34-.25.28-.96.94-.96 2.3s.99 2.68 1.13 2.86c.14.18 1.91 3.05 4.74 4.15 2.35.92 2.83.74 3.34.69.51-.05 1.65-.67 1.88-1.32.23-.65.23-1.2.16-1.32-.07-.12-.25-.18-.53-.32-.28-.14-1.65-.81-1.91-.9-.26-.1-.45-.14-.64.14-.18.28-.73.9-.9 1.08-.16.19-.33.21-.61.07-.28-.14-1.17-.43-2.23-1.38-.83-.73-1.38-1.64-1.54-1.91-.16-.28-.02-.43.12-.57.13-.13.28-.33.42-.49.14-.16.18-.28.28-.47.09-.18.05-.35-.02-.49-.07-.14-.63-1.55-.88-2.12-.23-.55-.47-.47-.65-.48h-.54Z" />
+              </svg>
+              <span class="flex min-w-0 flex-col items-start text-left rtl:items-end rtl:text-right">
+                <span class="text-sm font-semibold leading-tight">{{ t('product.copyWhatsapp') }}</span>
+                <span class="mt-1 font-mono text-lg font-bold leading-tight tracking-normal">{{ whatsappContact }}</span>
+              </span>
             </button>
-            <button class="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-4 font-medium text-gray-700 transition-colors hover:bg-gray-50" @click="copyToClipboard('Facebook: ShoeFactory123')">
-              <Share2 class="h-5 w-5 ltr:mr-1 rtl:ml-1 rtl:mr-0" />
-              {{ t('product.copyFacebook') }}
+            <button class="flex w-full items-center justify-center gap-3 rounded-xl bg-[#1877F2] px-4 py-4 text-white shadow-sm transition-colors hover:bg-[#166FE5] hover:shadow-md" @click="copyToClipboard(`Facebook: ${facebookContact}`)">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="h-6 w-6 shrink-0 fill-current">
+                <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.96h-1.51c-1.49 0-1.96.93-1.96 1.88v2.27h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07Z" />
+              </svg>
+              <span class="flex min-w-0 flex-col items-start text-left rtl:items-end rtl:text-right">
+                <span class="text-sm font-semibold leading-tight">{{ t('product.copyFacebook') }}</span>
+                <span class="mt-1 font-mono text-lg font-bold leading-tight tracking-normal">Facebook: {{ facebookContact }}</span>
+              </span>
             </button>
           </div>
         </div>

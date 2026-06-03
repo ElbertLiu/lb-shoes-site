@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { Delete, Edit, Plus, RefreshLeft, Search, Upload, View } from '@element-plus/icons-vue';
+import { Delete, Edit, Plus, Rank, RefreshLeft, Search, Upload, View } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import AdminLayout from '../../layouts/AdminLayout.vue';
 import { useCategories } from '../../stores/categories';
 import { useProducts } from '../../stores/products';
+import { getAuthHeaders, logout } from '../../stores/auth';
 import type { Product } from '../../types';
 import { API_BASE_URL, resolveMediaUrl } from '../../utils/api';
 
@@ -29,6 +30,8 @@ const previewProduct = ref<Product | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const formRef = ref();
 const uploadingImages = ref(false);
+const draggingImageIndex = ref<number | null>(null);
+const dragOverImageIndex = ref<number | null>(null);
 const formData = reactive<Product>({
   id: '',
   name: '',
@@ -192,6 +195,38 @@ const removeImageField = (index: number) => {
   }
   formData.images.splice(index, 1);
 };
+const moveImageField = (fromIndex: number, toIndex: number) => {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= formData.images.length || toIndex >= formData.images.length) {
+    return;
+  }
+  const [movedImage] = formData.images.splice(fromIndex, 1);
+  formData.images.splice(toIndex, 0, movedImage);
+  draggingImageIndex.value = toIndex;
+  dragOverImageIndex.value = toIndex;
+};
+const handleImageDragStart = (event: DragEvent, index: number) => {
+  draggingImageIndex.value = index;
+  dragOverImageIndex.value = index;
+  event.dataTransfer?.setData('text/plain', String(index));
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+  }
+};
+const handleImageDragOver = (event: DragEvent, index: number) => {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+  const fromIndex = draggingImageIndex.value;
+  if (fromIndex === null) {
+    return;
+  }
+  moveImageField(fromIndex, index);
+};
+const handleImageDragEnd = () => {
+  draggingImageIndex.value = null;
+  dragOverImageIndex.value = null;
+};
 const loadImage = (file: File) => new Promise<HTMLImageElement>((resolve, reject) => {
   const image = new Image();
   const objectUrl = URL.createObjectURL(file);
@@ -256,9 +291,14 @@ const uploadLocalImages = async (files: File[]) => {
 
     const response = await fetch(`${API_BASE_URL}/uploads/images`, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: uploadPayload,
     });
     const data = await response.json() as { files?: { path?: string }[]; error?: string };
+    if (response.status === 401) {
+      logout();
+      throw new Error('登录已过期，请重新登录');
+    }
     if (!response.ok || !Array.isArray(data.files)) {
       throw new Error(data.error || '图片上传失败');
     }
@@ -428,8 +468,26 @@ const handleSelectionChange = (rows: Product[]) => {
         </el-form-item>
         <el-form-item label="产品图片">
           <div class="flex w-full flex-col gap-3">
-            <div v-for="(_, index) in formData.images" :key="index" class="flex items-center gap-2">
+            <div
+              v-for="(_, index) in formData.images"
+              :key="index"
+              class="flex items-center gap-2 rounded-lg border border-transparent p-1 transition-colors"
+              :class="dragOverImageIndex === index ? 'border-[#409eff] bg-[#ecf5ff]' : 'hover:bg-[#f5f7fa]'"
+              @dragover="handleImageDragOver($event, index)"
+              @drop.prevent="handleImageDragEnd"
+            >
+              <button
+                type="button"
+                class="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded border border-[#dcdfe6] bg-white text-[#909399] transition-colors hover:border-[#409eff] hover:text-[#409eff] active:cursor-grabbing"
+                draggable="true"
+                title="拖拽调整图片顺序"
+                @dragstart="handleImageDragStart($event, index)"
+                @dragend="handleImageDragEnd"
+              >
+                <el-icon><Rank /></el-icon>
+              </button>
               <el-input v-model="formData.images[index]" placeholder="可填写外链 URL，或上传本地图片后自动生成" />
+              <el-tag v-if="index === 0" type="success" effect="plain">首图</el-tag>
               <el-button :icon="Delete" @click="removeImageField(index)" />
             </div>
             <div class="flex flex-wrap gap-2">
@@ -445,14 +503,19 @@ const handleSelectionChange = (rows: Product[]) => {
               />
             </div>
             <div v-if="cleanImages(formData.images).length" class="flex flex-wrap gap-2">
-              <el-image
-                v-for="image in cleanImages(formData.images)"
+              <div
+                v-for="(image, index) in cleanImages(formData.images)"
                 :key="image"
-                :src="resolveMediaUrl(image)"
-                :preview-src-list="previewImages(formData.images)"
-                fit="cover"
-                class="h-16 w-16 rounded border border-[#ebeef5]"
-              />
+                class="relative h-16 w-16 overflow-hidden rounded border border-[#ebeef5]"
+              >
+                <el-image
+                  :src="resolveMediaUrl(image)"
+                  :preview-src-list="previewImages(formData.images)"
+                  fit="cover"
+                  class="h-full w-full"
+                />
+                <span v-if="index === 0" class="absolute left-1 top-1 rounded bg-[#67c23a] px-1.5 py-0.5 text-[10px] font-medium text-white">首图</span>
+              </div>
             </div>
           </div>
         </el-form-item>
