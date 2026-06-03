@@ -9,8 +9,8 @@ import ToastHost from '../components/ToastHost.vue';
 
 const route = useRoute();
 const { lang, setLang, t } = useLanguage();
-const { categories, getCategoryName, startCategorySync } = useCategories();
-const { products, startProductSync } = useProducts();
+const { categories, getCategoryName, loadCategories } = useCategories();
+const { products, loadProducts } = useProducts();
 const showLangMenu = ref(false);
 const dropdownRef = ref<HTMLElement | null>(null);
 
@@ -34,8 +34,8 @@ const chooseLanguage = (code: string) => {
 };
 
 onMounted(() => {
-  startCategorySync();
-  startProductSync();
+  loadCategories();
+  loadProducts();
   document.addEventListener('mousedown', closeOnOutside);
 });
 onBeforeUnmount(() => document.removeEventListener('mousedown', closeOnOutside));

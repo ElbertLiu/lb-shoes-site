@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import cors from 'cors';
 import express from 'express';
 import multer from 'multer';
@@ -15,6 +16,21 @@ const port = Number(process.env.PORT || 4000);
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.resolve(__dirname, '../data/uploads'));
 const uploadPublicPath = process.env.UPLOAD_PUBLIC_PATH || '/uploads';
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 8 * 1024 * 1024);
+const r2Bucket = process.env.R2_BUCKET?.trim();
+const r2Endpoint = process.env.R2_ENDPOINT?.trim();
+const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.replace(/\/$/, '');
+const r2Client = r2Bucket && r2Endpoint && r2AccessKeyId && r2SecretAccessKey
+  ? new S3Client({
+    region: 'auto',
+    endpoint: r2Endpoint,
+    credentials: {
+      accessKeyId: r2AccessKeyId,
+      secretAccessKey: r2SecretAccessKey,
+    },
+  })
+  : null;
 const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin123456';
 const authSecret = process.env.AUTH_SECRET || randomUUID();
@@ -168,6 +184,51 @@ function buildPublicUrl(req: express.Request, pathname: string) {
   return `${baseUrl}${pathname}`;
 }
 
+function buildR2ObjectKey(extension: string) {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `products/${year}/${month}/${Date.now()}-${randomUUID()}.${extension}`;
+}
+
+async function saveUploadedImage(req: express.Request, file: Express.Multer.File) {
+  const extension = imageMimeExtensions[file.mimetype];
+  const filename = `${Date.now()}-${randomUUID()}.${extension}`;
+
+  if (r2Client && r2Bucket && r2PublicBaseUrl) {
+    const key = buildR2ObjectKey(extension);
+    await r2Client.send(new PutObjectCommand({
+      Bucket: r2Bucket,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      CacheControl: 'public, max-age=31536000, immutable',
+    }));
+    const url = `${r2PublicBaseUrl}/${key}`;
+    return {
+      originalName: file.originalname,
+      filename: path.basename(key),
+      path: url,
+      url,
+      size: file.size,
+      mimeType: file.mimetype,
+    };
+  }
+
+  await mkdir(uploadDir, { recursive: true });
+  const filePath = path.join(uploadDir, filename);
+  const publicPath = `${uploadPublicPath}/${filename}`;
+  await writeFile(filePath, file.buffer);
+  return {
+    originalName: file.originalname,
+    filename,
+    path: publicPath,
+    url: buildPublicUrl(req, publicPath),
+    size: file.size,
+    mimeType: file.mimetype,
+  };
+}
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'shoes-backend' });
 });
@@ -203,22 +264,7 @@ app.post('/api/uploads/images', requireAuth, upload.array('images', 12), async (
       return;
     }
 
-    await mkdir(uploadDir, { recursive: true });
-    const savedFiles = await Promise.all(files.map(async (file) => {
-      const extension = imageMimeExtensions[file.mimetype];
-      const filename = `${Date.now()}-${randomUUID()}.${extension}`;
-      const filePath = path.join(uploadDir, filename);
-      const publicPath = `${uploadPublicPath}/${filename}`;
-      await writeFile(filePath, file.buffer);
-      return {
-        originalName: file.originalname,
-        filename,
-        path: publicPath,
-        url: buildPublicUrl(req, publicPath),
-        size: file.size,
-        mimeType: file.mimetype,
-      };
-    }));
+    const savedFiles = await Promise.all(files.map((file) => saveUploadedImage(req, file)));
 
     res.status(201).json({ files: savedFiles });
   } catch (error) {

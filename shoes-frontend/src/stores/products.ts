@@ -6,7 +6,6 @@ import { API_BASE_URL } from '../utils/api';
 
 const products = ref<Product[]>(defaultProducts.slice(0, 20));
 let lastSerialized = JSON.stringify(products.value);
-let syncTimer: number | undefined;
 
 function normalize(value: unknown): Product[] {
   if (!Array.isArray(value)) {
@@ -69,14 +68,8 @@ export async function writeProducts(nextProducts: Product[]) {
   lastSerialized = JSON.stringify(saved);
 }
 
-export function startProductSync(interval = 1200) {
-  if (syncTimer || typeof window === 'undefined') {
-    return;
-  }
+export function loadProducts() {
   void reloadProducts();
-  syncTimer = window.setInterval(() => void reloadProducts(), interval);
-  window.addEventListener('focus', () => void reloadProducts());
-  document.addEventListener('visibilitychange', () => void reloadProducts());
 }
 
 export function useProducts() {
@@ -84,6 +77,6 @@ export function useProducts() {
     products,
     reloadProducts,
     setProducts: writeProducts,
-    startProductSync,
+    loadProducts,
   };
 }

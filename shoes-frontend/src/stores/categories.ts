@@ -6,7 +6,6 @@ import { API_BASE_URL } from '../utils/api';
 
 const categories = ref<Category[]>([...defaultCategories]);
 let lastSerialized = JSON.stringify(categories.value);
-let syncTimer: number | undefined;
 
 function normalize(value: unknown): Category[] {
   if (!Array.isArray(value)) {
@@ -61,14 +60,8 @@ export async function writeCategories(nextCategories: Category[]) {
   lastSerialized = JSON.stringify(saved);
 }
 
-export function startCategorySync(interval = 1200) {
-  if (syncTimer || typeof window === 'undefined') {
-    return;
-  }
+export function loadCategories() {
   void reloadCategories();
-  syncTimer = window.setInterval(() => void reloadCategories(), interval);
-  window.addEventListener('focus', () => void reloadCategories());
-  document.addEventListener('visibilitychange', () => void reloadCategories());
 }
 
 export function getCategoryName(categoryId: string) {
@@ -81,6 +74,6 @@ export function useCategories() {
     getCategoryName,
     reloadCategories,
     setCategories: writeCategories,
-    startCategorySync,
+    loadCategories,
   };
 }

@@ -1,14 +1,24 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 import { seedDatabase } from './seed.js';
 import type { Category, Database, Product } from './types.js';
 
+const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, '../data');
 const dataFile = path.join(dataDir, 'db.json');
+const databaseUrl = process.env.DATABASE_URL?.trim();
+const pool = databaseUrl
+  ? new Pool({
+    connectionString: databaseUrl,
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+  })
+  : null;
 
 let writeQueue = Promise.resolve();
+let schemaReady: Promise<void> | undefined;
 
 function normalizeCategory(item: unknown): Category | null {
   const value = item as Partial<Category>;
@@ -65,7 +75,127 @@ export function normalizeDatabase(input: unknown): Database {
   };
 }
 
+async function ensureSchema() {
+  if (!pool) {
+    return;
+  }
+  schemaReady ??= (async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        brief TEXT NOT NULL DEFAULT '',
+        price TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL,
+        in_stock BOOLEAN NOT NULL DEFAULT true,
+        featured BOOLEAN NOT NULL DEFAULT false,
+        images JSONB NOT NULL DEFAULT '[]'::jsonb,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+  })();
+  await schemaReady;
+}
+
+async function readPostgresDatabase(): Promise<Database> {
+  if (!pool) {
+    throw new Error('PostgreSQL pool is not configured');
+  }
+  await ensureSchema();
+
+  const [categoriesResult, productsResult] = await Promise.all([
+    pool.query('SELECT id, name FROM categories ORDER BY sort_order ASC, id ASC'),
+    pool.query(`
+      SELECT id, name, brief, price, category, in_stock, featured, images
+      FROM products
+      ORDER BY sort_order ASC, id ASC
+    `),
+  ]);
+
+  const database = normalizeDatabase({
+    categories: categoriesResult.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+    })),
+    products: productsResult.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      brief: row.brief,
+      price: row.price,
+      category: row.category,
+      inStock: row.in_stock,
+      featured: row.featured,
+      images: row.images,
+    })),
+  });
+
+  if (!categoriesResult.rowCount && !productsResult.rowCount) {
+    await writePostgresDatabase(seedDatabase);
+    return seedDatabase;
+  }
+
+  return database;
+}
+
+async function writePostgresDatabase(database: Database): Promise<void> {
+  if (!pool) {
+    throw new Error('PostgreSQL pool is not configured');
+  }
+  await ensureSchema();
+
+  const normalized = normalizeDatabase(database);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('TRUNCATE products, categories');
+
+    for (const [index, category] of normalized.categories.entries()) {
+      await client.query(
+        'INSERT INTO categories (id, name, sort_order) VALUES ($1, $2, $3)',
+        [category.id, category.name, index],
+      );
+    }
+
+    for (const [index, product] of normalized.products.entries()) {
+      await client.query(
+        `INSERT INTO products
+          (id, name, brief, price, category, in_stock, featured, images, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+        [
+          product.id,
+          product.name,
+          product.brief,
+          product.price,
+          product.category,
+          product.inStock,
+          product.featured,
+          JSON.stringify(product.images),
+          index,
+        ],
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function readDatabase(): Promise<Database> {
+  if (pool) {
+    return readPostgresDatabase();
+  }
+
   try {
     const raw = await readFile(dataFile, 'utf-8');
     return normalizeDatabase(JSON.parse(raw));
@@ -76,6 +206,12 @@ export async function readDatabase(): Promise<Database> {
 }
 
 export async function writeDatabase(database: Database): Promise<void> {
+  if (pool) {
+    writeQueue = writeQueue.then(() => writePostgresDatabase(database));
+    await writeQueue;
+    return;
+  }
+
   const normalized = normalizeDatabase(database);
   writeQueue = writeQueue.then(async () => {
     await mkdir(dataDir, { recursive: true });
