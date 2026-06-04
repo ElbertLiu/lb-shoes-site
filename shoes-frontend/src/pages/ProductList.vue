@@ -7,31 +7,26 @@ import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import { resolveProductImage } from '../utils/api';
+import type { Product } from '../types';
 
-const ITEMS_PER_PAGE = 50;
+const ITEMS_PER_PAGE = 20;
 const route = useRoute();
 const router = useRouter();
 const { t } = useLanguage();
 const { categories, getCategoryName } = useCategories();
-const { products } = useProducts();
-const currentPage = ref(1);
+const { fetchProductsPage } = useProducts();
 const searchInput = ref((route.query.search as string) || '');
+const pageProducts = ref<Product[]>([]);
+const totalItems = ref(0);
+const totalPages = ref(0);
+const isLoading = ref(false);
 
 const categoryParam = computed(() => route.query.category as string | undefined);
 const searchParam = computed(() => route.query.search as string | undefined);
-const filteredProducts = computed(() => {
-  let result = products.value;
-  if (categoryParam.value) {
-    result = result.filter((product) => product.category === categoryParam.value);
-  }
-  if (searchParam.value) {
-    const q = searchParam.value.toLowerCase();
-    result = result.filter((product) => product.id.toLowerCase().includes(q) || product.name.toLowerCase().includes(q));
-  }
-  return result;
+const currentPage = computed(() => {
+  const rawPage = Number.parseInt(String(route.query.page || '1'), 10);
+  return Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
 });
-const totalPages = computed(() => Math.ceil(filteredProducts.value.length / ITEMS_PER_PAGE));
-const paginatedProducts = computed(() => filteredProducts.value.slice((currentPage.value - 1) * ITEMS_PER_PAGE, currentPage.value * ITEMS_PER_PAGE));
 const title = computed(() => {
   if (categoryParam.value) {
     return getCategoryName(categoryParam.value);
@@ -44,19 +39,55 @@ const title = computed(() => {
 
 watch(() => route.query.search, (value) => {
   searchInput.value = (value as string) || '';
-  currentPage.value = 1;
 });
 
 const setQuery = (query: Record<string, string>) => {
   router.push({ path: '/products', query });
-  currentPage.value = 1;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 const handleSearch = () => setQuery(searchInput.value ? { search: searchInput.value } : {});
 const selectCategory = (catId: string) => setQuery({ category: catId });
 const goPage = (page: number) => {
-  currentPage.value = Math.min(Math.max(page, 1), Math.max(totalPages.value, 1));
+  const nextPage = Math.min(Math.max(page, 1), Math.max(totalPages.value, 1));
+  const query: Record<string, string> = {};
+  if (categoryParam.value) {
+    query.category = categoryParam.value;
+  }
+  if (searchParam.value) {
+    query.search = searchParam.value;
+  }
+  if (nextPage > 1) {
+    query.page = String(nextPage);
+  }
+  router.push({ path: '/products', query });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 };
+
+const loadProductsPage = async () => {
+  isLoading.value = true;
+  try {
+    const result = await fetchProductsPage({
+      category: categoryParam.value,
+      search: searchParam.value,
+      page: currentPage.value,
+      pageSize: ITEMS_PER_PAGE,
+    });
+    pageProducts.value = result.items;
+    totalItems.value = result.pagination.total;
+    totalPages.value = result.pagination.totalPages;
+  } catch (error) {
+    console.warn(error);
+    pageProducts.value = [];
+    totalItems.value = 0;
+    totalPages.value = 0;
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+watch([categoryParam, searchParam, currentPage], () => {
+  void loadProductsPage();
+}, { immediate: true });
 </script>
 
 <template>
@@ -80,7 +111,7 @@ const goPage = (page: number) => {
       <div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">{{ title }}</h1>
-          <p class="mt-1 text-sm text-gray-500">{{ t('products.foundProducts', { count: filteredProducts.length }) }}</p>
+          <p class="mt-1 text-sm text-gray-500">{{ t('products.foundProducts', { count: totalItems }) }}</p>
         </div>
 
         <form class="relative w-full md:w-80" @submit.prevent="handleSearch">
@@ -89,7 +120,7 @@ const goPage = (page: number) => {
         </form>
       </div>
 
-      <div v-if="filteredProducts.length === 0" class="py-20 text-center">
+      <div v-if="!isLoading && pageProducts.length === 0" class="py-20 text-center">
         <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-50">
           <Search class="h-6 w-6 text-gray-300" />
         </div>
@@ -102,7 +133,7 @@ const goPage = (page: number) => {
 
       <template v-else>
         <div class="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 lg:grid-cols-5">
-          <RouterLink v-for="product in paginatedProducts" :key="product.id" :to="`/product/${product.id}`" class="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+          <RouterLink v-for="product in pageProducts" :key="product.id" :to="`/product/${product.id}`" class="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
             <div class="relative aspect-[4/5] overflow-hidden bg-gray-50">
               <img :src="resolveProductImage(product.images)" :alt="product.id" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
             </div>

@@ -3,12 +3,13 @@ import { ArrowRight, Building2, Facebook, Globe, MapPin, MessageCircle } from 'l
 import ClientLayout from '../layouts/ClientLayout.vue';
 import { useLanguage } from '../i18n';
 import { useToast } from '../composables/useToast';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 const { t } = useLanguage();
 const { success } = useToast();
 const copyToClipboard = async (text: string) => {
-  await navigator.clipboard.writeText(text);
-  success('Copied to clipboard');
+  const copied = await copyTextToClipboard(text);
+  success(copied ? 'Copied to clipboard' : 'Copy failed, please copy manually');
 };
 </script>
 

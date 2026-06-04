@@ -45,6 +45,8 @@ const imageMimeExtensions: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
+const DEFAULT_PRODUCTS_PAGE_SIZE = 20;
+const MAX_PRODUCTS_PAGE_SIZE = 100;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: maxUploadBytes, files: 12 },
@@ -84,6 +86,24 @@ app.use(uploadPublicPath, express.static(uploadDir, {
 
 function badRequest(message: string) {
   return { error: message };
+}
+
+function parsePositiveInteger(value: unknown, fallback: number, max?: number) {
+  const source = Array.isArray(value) ? value[0] : value;
+  const parsed = Number.parseInt(String(source ?? ''), 10);
+  const normalized = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return typeof max === 'number' ? Math.min(normalized, max) : normalized;
+}
+
+function parseQueryString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseQueryBoolean(value: unknown) {
+  if (typeof value !== 'string' || value === '') {
+    return undefined;
+  }
+  return value === 'true';
 }
 
 function base64url(input: string | Buffer) {
@@ -360,20 +380,45 @@ app.delete('/api/categories/:id', requireAuth, async (req, res, next) => {
 
 app.get('/api/products', async (req, res, next) => {
   try {
-    const { category, search, featured, inStock } = req.query;
+    const category = parseQueryString(req.query.category);
+    const search = parseQueryString(req.query.search).toLowerCase();
+    const featured = parseQueryBoolean(req.query.featured);
+    const inStock = parseQueryBoolean(req.query.inStock);
+    const page = parsePositiveInteger(req.query.page, 1);
+    const pageSize = parsePositiveInteger(req.query.pageSize ?? req.query.limit, DEFAULT_PRODUCTS_PAGE_SIZE, MAX_PRODUCTS_PAGE_SIZE);
     const database = await readDatabase();
-    const q = typeof search === 'string' ? search.trim().toLowerCase() : '';
     const products = database.products.filter((product) => {
-      const matchesSearch = !q
-        || product.id.toLowerCase().includes(q)
-        || product.name.toLowerCase().includes(q)
-        || product.brief.toLowerCase().includes(q);
-      const matchesCategory = typeof category !== 'string' || !category || product.category === category;
-      const matchesFeatured = typeof featured !== 'string' || featured === '' || product.featured === (featured === 'true');
-      const matchesStock = typeof inStock !== 'string' || inStock === '' || product.inStock === (inStock === 'true');
+      const matchesSearch = !search
+        || product.id.toLowerCase().includes(search)
+        || product.name.toLowerCase().includes(search)
+        || product.brief.toLowerCase().includes(search);
+      const matchesCategory = !category || product.category === category;
+      const matchesFeatured = typeof featured !== 'boolean' || product.featured === featured;
+      const matchesStock = typeof inStock !== 'boolean' || product.inStock === inStock;
       return matchesSearch && matchesCategory && matchesFeatured && matchesStock;
     });
-    res.json(products);
+    const total = products.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const start = (page - 1) * pageSize;
+    const items = products.slice(start, start + pageSize);
+
+    res.json({
+      items,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasPrevPage: page > 1 && totalPages > 0,
+        hasNextPage: totalPages > 0 && page < totalPages,
+      },
+      filters: {
+        category,
+        search,
+        featured,
+        inStock,
+      },
+    });
   } catch (error) {
     next(error);
   }

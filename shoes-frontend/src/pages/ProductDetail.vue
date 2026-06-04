@@ -8,16 +8,18 @@ import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import { useToast } from '../composables/useToast';
 import { resolveMediaUrl, resolveProductImage } from '../utils/api';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 const route = useRoute();
 const { t, lang } = useLanguage();
 const { getCategoryName } = useCategories();
-const { products } = useProducts();
+const { products, fetchProductById } = useProducts();
 const { success } = useToast();
 const currentImageIndex = ref(0);
 const whatsappContact = (import.meta.env.VITE_WHATSAPP_CONTACT as string | undefined)?.trim() || '+86 138-0000-0000';
 const facebookContact = (import.meta.env.VITE_FACEBOOK_CONTACT as string | undefined)?.trim() || 'ShoeFactory123';
-const product = computed(() => products.value.find((p) => p.id === route.params.id));
+const productId = computed(() => String(route.params.id || ''));
+const product = computed(() => products.value.find((p) => p.id === productId.value));
 const isRtl = computed(() => lang.value === 'ar');
 const productImages = computed(() => product.value?.images.map((image) => image.trim()).filter(Boolean) || []);
 const currentProductImage = computed(() => resolveProductImage(product.value?.images, currentImageIndex.value));
@@ -34,13 +36,16 @@ const prevImage = () => {
   }
 };
 const copyToClipboard = async (text: string) => {
-  await navigator.clipboard.writeText(text);
-  success('Copied to clipboard');
+  const copied = await copyTextToClipboard(text);
+  success(copied ? 'Copied to clipboard' : 'Copy failed, please copy manually');
 };
 
-watch(() => route.params.id, () => {
+watch(productId, (id) => {
   currentImageIndex.value = 0;
-});
+  if (id) {
+    void fetchProductById(id);
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -69,7 +74,7 @@ watch(() => route.params.id, () => {
             </button>
           </div>
 
-          <div v-if="productImages.length" class="no-scrollbar flex gap-4 overflow-x-auto pb-1">
+          <div v-if="productImages.length" class="thumbnail-scrollbar flex gap-4 overflow-x-auto pb-3">
             <button v-for="(img, idx) in productImages" :key="`${img}-${idx}`" class="aspect-square w-28 shrink-0 overflow-hidden rounded-lg border-2 transition-colors sm:w-32 md:w-36 lg:w-[calc((100%_-_3rem)/4)]" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
               <img :src="resolveMediaUrl(img)" alt="" class="h-full w-full object-cover" />
             </button>

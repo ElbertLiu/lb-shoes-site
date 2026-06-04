@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ArrowRight, Search } from 'lucide-vue-next';
 import ClientLayout from '../layouts/ClientLayout.vue';
@@ -7,22 +7,31 @@ import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import { resolveProductImage } from '../utils/api';
+import type { Product } from '../types';
 import heroFactoryImage from '../assets/home-shoe-factory-hero.png';
 
 const router = useRouter();
 const searchId = ref('');
 const { t, langObj } = useLanguage();
 const { categories, getCategoryName } = useCategories();
-const { products } = useProducts();
+const { fetchProductsPage } = useProducts();
+const homeProducts = ref<Product[]>([]);
 const buyers = computed(() => langObj.value.home.buyers as readonly string[]);
 const firstCategoryPath = computed(() => categories.value[0] ? `/products?category=${categories.value[0].id}` : '/products');
-const homeProducts = computed(() => products.value.filter((product) => product.featured).slice(0, 20));
 
 const handleSearch = () => {
   if (searchId.value.trim()) {
     router.push(`/products?search=${encodeURIComponent(searchId.value.trim())}`);
   }
 };
+
+onMounted(async () => {
+  try {
+    homeProducts.value = (await fetchProductsPage({ featured: true, page: 1, pageSize: 20 })).items;
+  } catch (error) {
+    console.warn(error);
+  }
+});
 </script>
 
 <template>

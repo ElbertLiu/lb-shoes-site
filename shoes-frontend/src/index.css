@@ -11,5 +11,22 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 16px);
   }
+  .thumbnail-scrollbar {
+    scrollbar-color: #94a3b8 #e5e7eb;
+    scrollbar-width: thin;
+  }
+  .thumbnail-scrollbar::-webkit-scrollbar {
+    height: 8px;
+  }
+  .thumbnail-scrollbar::-webkit-scrollbar-track {
+    background: #e5e7eb;
+    border-radius: 999px;
+  }
+  .thumbnail-scrollbar::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 999px;
+  }
+  .thumbnail-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
 }
-

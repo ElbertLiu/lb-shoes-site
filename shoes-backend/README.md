@@ -39,6 +39,37 @@ Product records should keep the returned `path` value, for example `/uploads/xxx
 Write endpoints and image uploads require `Authorization: Bearer <token>` from `POST /api/auth/login`.
 Change `ADMIN_PASSWORD` and `AUTH_SECRET` before exposing the backend publicly.
 
+`GET /api/products` returns a paginated response. Supported query parameters:
+
+- `category`: filter by category id
+- `search`: search by product id, name, or brief
+- `featured`: `true` or `false`
+- `inStock`: `true` or `false`
+- `page`: current page, defaults to `1`
+- `pageSize` or `limit`: items per page, defaults to `20`, maximum `100`
+
+Example:
+
+```http
+GET /api/products?category=sneakers&page=2&pageSize=20
+```
+
+Response shape:
+
+```json
+{
+  "items": [],
+  "pagination": {
+    "page": 2,
+    "pageSize": 20,
+    "total": 0,
+    "totalPages": 0,
+    "hasPrevPage": true,
+    "hasNextPage": false
+  }
+}
+```
+
 To migrate existing JSON data into PostgreSQL:
 
 ```bash
