@@ -69,8 +69,8 @@ watch(() => route.params.id, () => {
             </button>
           </div>
 
-          <div v-if="productImages.length" class="grid grid-cols-4 gap-4">
-            <button v-for="(img, idx) in productImages" :key="`${img}-${idx}`" class="aspect-square overflow-hidden rounded-lg border-2 transition-colors" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
+          <div v-if="productImages.length" class="no-scrollbar flex gap-4 overflow-x-auto pb-1">
+            <button v-for="(img, idx) in productImages" :key="`${img}-${idx}`" class="aspect-square w-28 shrink-0 overflow-hidden rounded-lg border-2 transition-colors sm:w-32 md:w-36 lg:w-[calc((100%_-_3rem)/4)]" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
               <img :src="resolveMediaUrl(img)" alt="" class="h-full w-full object-cover" />
             </button>
           </div>

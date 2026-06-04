@@ -8,12 +8,9 @@ import { useProducts } from '../../stores/products';
 import { getAuthHeaders, logout } from '../../stores/auth';
 import type { Product } from '../../types';
 import { API_BASE_URL, resolveMediaUrl } from '../../utils/api';
+import { IMAGE_TARGET_BYTES, MAX_PRODUCT_IMAGES, prepareImageForUpload } from '../../utils/imageCompression';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400';
-const MAX_IMAGE_SIDE = 1600;
-const TARGET_IMAGE_BYTES = 720 * 1024;
-const INITIAL_IMAGE_QUALITY = 0.82;
-const MIN_IMAGE_QUALITY = 0.56;
 const { categories, getCategoryName } = useCategories();
 const { products: productList, setProducts } = useProducts();
 
@@ -30,6 +27,7 @@ const previewProduct = ref<Product | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const formRef = ref();
 const uploadingImages = ref(false);
+const uploadStatus = ref('');
 const draggingImageIndex = ref<number | null>(null);
 const dragOverImageIndex = ref<number | null>(null);
 const formData = reactive<Product>({
@@ -94,7 +92,7 @@ const previewImages = (images: string[]) => cleanImages(images).map(resolveMedia
 const firstImage = (images: string[]) => resolveMediaUrl(cleanImages(images)[0] || FALLBACK_IMAGE);
 const resetForm = (product?: Product) => {
   Object.assign(formData, product
-    ? { ...product, images: product.images.length ? [...product.images] : [''] }
+    ? { ...product, images: product.images.length ? [...product.images.slice(0, MAX_PRODUCT_IMAGES)] : [''] }
     : {
       id: '',
       name: '',
@@ -163,7 +161,7 @@ const handleBatchFeatured = async (value: boolean) => {
 };
 const handleSubmit = async () => {
   await formRef.value?.validate();
-  const images = cleanImages(formData.images);
+  const images = cleanImages(formData.images).slice(0, MAX_PRODUCT_IMAGES);
   const saved: Product = {
     id: formData.id.trim(),
     name: formData.name.trim(),
@@ -187,7 +185,13 @@ const handleSubmit = async () => {
   showForm.value = false;
   ElMessage.success('保存成功');
 };
-const addImageField = () => formData.images.push('');
+const addImageField = () => {
+  if (formData.images.length >= MAX_PRODUCT_IMAGES) {
+    ElMessage.warning(`最多只能添加 ${MAX_PRODUCT_IMAGES} 张产品图片`);
+    return;
+  }
+  formData.images.push('');
+};
 const removeImageField = (index: number) => {
   if (formData.images.length === 1) {
     formData.images[0] = '';
@@ -227,68 +231,45 @@ const handleImageDragEnd = () => {
   draggingImageIndex.value = null;
   dragOverImageIndex.value = null;
 };
-const loadImage = (file: File) => new Promise<HTMLImageElement>((resolve, reject) => {
-  const image = new Image();
-  const objectUrl = URL.createObjectURL(file);
-  image.onload = () => {
-    URL.revokeObjectURL(objectUrl);
-    resolve(image);
-  };
-  image.onerror = () => {
-    URL.revokeObjectURL(objectUrl);
-    reject(new Error('图片读取失败'));
-  };
-  image.src = objectUrl;
-});
-const canvasToBlob = (canvas: HTMLCanvasElement, type: string, quality: number) => new Promise<Blob>((resolve, reject) => {
-  canvas.toBlob((blob) => {
-    if (blob) {
-      resolve(blob);
-      return;
-    }
-    reject(new Error('图片压缩失败'));
-  }, type, quality);
-});
-const compressImage = async (file: File) => {
-  const image = await loadImage(file);
-  const ratio = Math.min(1, MAX_IMAGE_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
-  const width = Math.max(1, Math.round(image.naturalWidth * ratio));
-  const height = Math.max(1, Math.round(image.naturalHeight * ratio));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('浏览器不支持图片压缩');
-  }
-  context.fillStyle = '#fff';
-  context.fillRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
-
-  let quality = INITIAL_IMAGE_QUALITY;
-  let blob = await canvasToBlob(canvas, 'image/webp', quality);
-  while (blob.size > TARGET_IMAGE_BYTES && quality > MIN_IMAGE_QUALITY) {
-    quality = Math.max(MIN_IMAGE_QUALITY, quality - 0.08);
-    blob = await canvasToBlob(canvas, 'image/webp', quality);
-  }
-
-  const filename = file.name.replace(/\.[^.]+$/, '') || 'product-image';
-  return new File([blob], `${filename}.webp`, { type: 'image/webp' });
-};
 const uploadLocalImages = async (files: File[]) => {
   if (!files.length) {
     return;
   }
+  const existingImages = cleanImages(formData.images);
+  const remainingSlots = MAX_PRODUCT_IMAGES - existingImages.length;
+  if (remainingSlots <= 0) {
+    ElMessage.warning(`最多只能上传 ${MAX_PRODUCT_IMAGES} 张产品图片`);
+    return;
+  }
+  if (files.length > remainingSlots) {
+    ElMessage.warning(`最多只能上传 ${MAX_PRODUCT_IMAGES} 张产品图片，当前还可上传 ${remainingSlots} 张`);
+    return;
+  }
+
   uploadingImages.value = true;
+  uploadStatus.value = '正在处理图片，请稍等...';
   try {
     const uploadPayload = new FormData();
+    let originalCount = 0;
+    let compressedCount = 0;
+
     for (const file of files) {
       if (!file.type.startsWith('image/')) {
         throw new Error('只能上传图片文件');
       }
-      uploadPayload.append('images', await compressImage(file));
+      if (file.size > IMAGE_TARGET_BYTES) {
+        uploadStatus.value = '正在压缩图片，请稍等...';
+      }
+      const preparedImage = await prepareImageForUpload(file);
+      uploadPayload.append('images', preparedImage.file);
+      if (preparedImage.compressed) {
+        compressedCount += 1;
+      } else {
+        originalCount += 1;
+      }
     }
 
+    uploadStatus.value = '正在上传图片，请稍等...';
     const response = await fetch(`${API_BASE_URL}/uploads/images`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -304,13 +285,18 @@ const uploadLocalImages = async (files: File[]) => {
     }
 
     const uploadedPaths = data.files.map((file) => file.path).filter((path): path is string => Boolean(path));
-    const nextImages = [...cleanImages(formData.images), ...uploadedPaths];
+    const nextImages = [...cleanImages(formData.images), ...uploadedPaths].slice(0, MAX_PRODUCT_IMAGES);
     formData.images.splice(0, formData.images.length, ...(nextImages.length ? nextImages : ['']));
-    ElMessage.success(`已压缩并上传 ${uploadedPaths.length} 张图片`);
+    const messageParts = [
+      originalCount ? `原图上传 ${originalCount} 张` : '',
+      compressedCount ? `压缩上传 ${compressedCount} 张` : '',
+    ].filter(Boolean);
+    ElMessage.success(messageParts.length ? messageParts.join('，') : `已上传 ${uploadedPaths.length} 张图片`);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '图片上传失败');
   } finally {
     uploadingImages.value = false;
+    uploadStatus.value = '';
   }
 };
 const handleImageInputChange = async (event: Event) => {
@@ -491,8 +477,8 @@ const handleSelectionChange = (rows: Product[]) => {
               <el-button :icon="Delete" @click="removeImageField(index)" />
             </div>
             <div class="flex flex-wrap gap-2">
-              <el-button :icon="Plus" @click="addImageField">添加图片 URL</el-button>
-              <el-button type="primary" :icon="Upload" :loading="uploadingImages" @click="fileInputRef?.click()">上传本地图片</el-button>
+              <el-button :icon="Plus" :disabled="formData.images.length >= MAX_PRODUCT_IMAGES || uploadingImages" @click="addImageField">添加图片 URL</el-button>
+              <el-button type="primary" :icon="Upload" :loading="uploadingImages" :disabled="cleanImages(formData.images).length >= MAX_PRODUCT_IMAGES" @click="fileInputRef?.click()">上传本地图片</el-button>
               <input
                 ref="fileInputRef"
                 type="file"
@@ -502,6 +488,8 @@ const handleSelectionChange = (rows: Product[]) => {
                 @change="handleImageInputChange"
               />
             </div>
+            <p v-if="uploadStatus" class="text-sm text-[#409eff]">{{ uploadStatus }}</p>
+            <p class="text-xs text-[#909399]">最多上传 {{ MAX_PRODUCT_IMAGES }} 张图片；500KB 以内原图上传，超过 500KB 会压缩到约 500KB。</p>
             <div v-if="cleanImages(formData.images).length" class="flex flex-wrap gap-2">
               <div
                 v-for="(image, index) in cleanImages(formData.images)"

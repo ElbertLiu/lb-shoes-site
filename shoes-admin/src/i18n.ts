@@ -13,6 +13,42 @@ export const languages = {
 };
 
 export type LanguageCode = keyof typeof languages;
+const DEFAULT_LANGUAGE: LanguageCode = 'en';
+
+const isLanguageCode = (value: string): value is LanguageCode => Object.prototype.hasOwnProperty.call(languages, value);
+
+export function detectPreferredLanguage(preferredLocales: readonly string[] = []): LanguageCode {
+  for (const locale of preferredLocales) {
+    const normalized = locale.trim().toLowerCase();
+    if (!normalized) {
+      continue;
+    }
+
+    if (isLanguageCode(normalized)) {
+      return normalized;
+    }
+
+    const language = normalized.split('-')[0];
+    if (isLanguageCode(language)) {
+      return language;
+    }
+  }
+
+  return DEFAULT_LANGUAGE;
+}
+
+const getBrowserLocales = () => {
+  if (typeof navigator === 'undefined') {
+    return [];
+  }
+
+  const browserNavigator = navigator as Navigator & { userLanguage?: string };
+  return [
+    ...Array.from(browserNavigator.languages || []),
+    browserNavigator.language,
+    browserNavigator.userLanguage,
+  ].filter((locale): locale is string => typeof locale === 'string' && Boolean(locale.trim()));
+};
 
 export const translations = {
   zh: {
@@ -522,10 +558,14 @@ const applyRtl = (l: string) => {
 
 const initialLang = (() => {
   if (typeof localStorage === 'undefined') {
-    return 'zh';
+    return detectPreferredLanguage(getBrowserLocales());
   }
-  const saved = localStorage.getItem('appLang') as LanguageCode | null;
-  return saved && languages[saved] ? saved : 'zh';
+  try {
+    const saved = localStorage.getItem('appLang') as LanguageCode | null;
+    return saved && languages[saved] ? saved : detectPreferredLanguage(getBrowserLocales());
+  } catch {
+    return detectPreferredLanguage(getBrowserLocales());
+  }
 })();
 
 const lang = ref<LanguageCode>(initialLang);
@@ -533,7 +573,11 @@ applyRtl(lang.value);
 
 const setLang = (newLang: LanguageCode) => {
   lang.value = newLang;
-  localStorage.setItem('appLang', newLang);
+  try {
+    localStorage.setItem('appLang', newLang);
+  } catch {
+    // Ignore storage failures; the in-memory language still updates.
+  }
   applyRtl(newLang);
 };
 
