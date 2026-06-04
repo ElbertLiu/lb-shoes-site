@@ -6,7 +6,7 @@ import ClientLayout from '../layouts/ClientLayout.vue';
 import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
-import { resolveMediaUrl } from '../utils/api';
+import { resolveProductImage } from '../utils/api';
 import heroFactoryImage from '../assets/home-shoe-factory-hero.png';
 
 const router = useRouter();
@@ -101,7 +101,7 @@ const handleSearch = () => {
           class="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]"
         >
           <div class="relative aspect-[4/5] overflow-hidden bg-gray-50">
-            <img :src="resolveMediaUrl(product.images[0])" :alt="product.id" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+            <img :src="resolveProductImage(product.images)" :alt="product.id" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
           </div>
           <div class="flex flex-grow flex-col p-4 text-center lg:text-left rtl:lg:text-right">
             <p class="mb-1 font-mono text-xs text-gray-400">{{ product.id }}</p>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-vue-next';
 import ClientLayout from '../layouts/ClientLayout.vue';
@@ -7,7 +7,7 @@ import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import { useToast } from '../composables/useToast';
-import { resolveMediaUrl } from '../utils/api';
+import { resolveMediaUrl, resolveProductImage } from '../utils/api';
 
 const route = useRoute();
 const { t, lang } = useLanguage();
@@ -15,25 +15,32 @@ const { getCategoryName } = useCategories();
 const { products } = useProducts();
 const { success } = useToast();
 const currentImageIndex = ref(0);
-const whatsappContact = '+86 138-0000-0000';
-const facebookContact = 'ShoeFactory123';
+const whatsappContact = (import.meta.env.VITE_WHATSAPP_CONTACT as string | undefined)?.trim() || '+86 138-0000-0000';
+const facebookContact = (import.meta.env.VITE_FACEBOOK_CONTACT as string | undefined)?.trim() || 'ShoeFactory123';
 const product = computed(() => products.value.find((p) => p.id === route.params.id));
 const isRtl = computed(() => lang.value === 'ar');
+const productImages = computed(() => product.value?.images.map((image) => image.trim()).filter(Boolean) || []);
+const currentProductImage = computed(() => resolveProductImage(product.value?.images, currentImageIndex.value));
+const hasMultipleImages = computed(() => productImages.value.length > 1);
 
 const nextImage = () => {
-  if (product.value) {
-    currentImageIndex.value = (currentImageIndex.value + 1) % product.value.images.length;
+  if (hasMultipleImages.value) {
+    currentImageIndex.value = (currentImageIndex.value + 1) % productImages.value.length;
   }
 };
 const prevImage = () => {
-  if (product.value) {
-    currentImageIndex.value = currentImageIndex.value === 0 ? product.value.images.length - 1 : currentImageIndex.value - 1;
+  if (hasMultipleImages.value) {
+    currentImageIndex.value = currentImageIndex.value === 0 ? productImages.value.length - 1 : currentImageIndex.value - 1;
   }
 };
 const copyToClipboard = async (text: string) => {
   await navigator.clipboard.writeText(text);
   success('Copied to clipboard');
 };
+
+watch(() => route.params.id, () => {
+  currentImageIndex.value = 0;
+});
 </script>
 
 <template>
@@ -53,17 +60,17 @@ const copyToClipboard = async (text: string) => {
       <div class="flex flex-col gap-10 lg:flex-row lg:gap-16">
         <div class="flex w-full flex-col gap-4 lg:w-1/2">
           <div class="group relative aspect-square overflow-hidden rounded-2xl bg-gray-50 md:aspect-[4/3] lg:aspect-square">
-            <img :src="resolveMediaUrl(product.images[currentImageIndex])" :alt="product.name" class="h-full w-full object-cover" />
-            <button class="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="prevImage">
+            <img :src="currentProductImage" :alt="product.name" class="h-full w-full object-cover" />
+            <button v-if="hasMultipleImages" class="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="prevImage">
               <ChevronLeft class="h-5 w-5 rtl:rotate-180" />
             </button>
-            <button class="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="nextImage">
+            <button v-if="hasMultipleImages" class="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="nextImage">
               <ChevronRight class="h-5 w-5 rtl:rotate-180" />
             </button>
           </div>
 
-          <div class="grid grid-cols-4 gap-4">
-            <button v-for="(img, idx) in product.images" :key="img" class="aspect-square overflow-hidden rounded-lg border-2 transition-colors" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
+          <div v-if="productImages.length" class="grid grid-cols-4 gap-4">
+            <button v-for="(img, idx) in productImages" :key="`${img}-${idx}`" class="aspect-square overflow-hidden rounded-lg border-2 transition-colors" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
               <img :src="resolveMediaUrl(img)" alt="" class="h-full w-full object-cover" />
             </button>
           </div>
