@@ -63,9 +63,9 @@ export function getProductTitle(product: Product, categoryName: string, language
   return name || product.id;
 }
 
-export function getProductDescription(product: Product, fallback: string, language?: LanguageCode) {
+export function getProductDescription(product: Product, language?: LanguageCode) {
   const translatedBrief = language ? product.briefTranslations?.[language]?.trim() : '';
-  return translatedBrief || product.brief.trim() || fallback;
+  return translatedBrief || product.brief.trim();
 }
 
 export function getProductCardImage(product: Product, colorIndex?: number) {

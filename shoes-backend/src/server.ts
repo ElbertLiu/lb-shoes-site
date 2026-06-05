@@ -13,6 +13,8 @@ import type { Category, Product } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.disable('x-powered-by');
+
 const port = Number(process.env.PORT || 4000);
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.resolve(__dirname, '../data/uploads'));
 const uploadPublicPath = process.env.UPLOAD_PUBLIC_PATH || '/uploads';
@@ -82,11 +84,19 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(uploadPublicPath, express.static(uploadDir, {
   immutable: true,
-  maxAge: '30d',
+  maxAge: '1y',
 }));
 
 function badRequest(message: string) {
   return { error: message };
+}
+
+function setPublicApiCache(res: express.Response, seconds = 60) {
+  res.set('Cache-Control', `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=300`);
+}
+
+function setNoStore(res: express.Response) {
+  res.set('Cache-Control', 'no-store');
 }
 
 function parsePositiveInteger(value: unknown, fallback: number, max?: number) {
@@ -276,10 +286,12 @@ async function saveUploadedImage(req: express.Request, file: Express.Multer.File
 }
 
 app.get('/health', (_req, res) => {
+  setNoStore(res);
   res.json({ ok: true, service: 'shoes-backend' });
 });
 
 app.post('/api/auth/login', (req, res) => {
+  setNoStore(res);
   const body = req.body as { username?: unknown; password?: unknown };
   const username = typeof body.username === 'string' ? body.username.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
@@ -299,6 +311,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/auth/me', requireAuth, (_req, res) => {
+  setNoStore(res);
   res.json({ user: { username: adminUsername } });
 });
 
@@ -349,6 +362,7 @@ app.post('/api/translations', requireAuth, async (req, res, next) => {
 app.get('/api/categories', async (_req, res, next) => {
   try {
     const database = await readDatabase();
+    setPublicApiCache(res);
     res.json(database.categories);
   } catch (error) {
     next(error);
@@ -456,6 +470,7 @@ app.get('/api/products', async (req, res, next) => {
     const start = (page - 1) * pageSize;
     const items = products.slice(start, start + pageSize);
 
+    setPublicApiCache(res);
     res.json({
       items,
       pagination: {
@@ -505,6 +520,7 @@ app.get('/api/products/:id', async (req, res, next) => {
       res.status(404).json(badRequest('产品不存在'));
       return;
     }
+    setPublicApiCache(res, 300);
     res.json(product);
   } catch (error) {
     next(error);

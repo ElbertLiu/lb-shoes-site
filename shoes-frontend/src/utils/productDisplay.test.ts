@@ -30,10 +30,10 @@ assert.equal(
   'Air Flex Runner',
 );
 
-assert.equal(getProductDescription(product({ brief: '我是产品简介' }), 'fallback'), '我是产品简介');
-assert.equal(getProductDescription(product({ brief: '我是产品简介', briefTranslations: { en: 'Product description' } }), 'fallback', 'en'), 'Product description');
-assert.equal(getProductDescription(product({ brief: '我是产品简介', briefTranslations: { en: 'Product description' } }), 'fallback', 'fr'), '我是产品简介');
-assert.equal(getProductDescription(product({ brief: '' }), 'fallback'), 'fallback');
+assert.equal(getProductDescription(product({ brief: '我是产品简介' })), '我是产品简介');
+assert.equal(getProductDescription(product({ brief: '我是产品简介', briefTranslations: { en: 'Product description' } }), 'en'), 'Product description');
+assert.equal(getProductDescription(product({ brief: '我是产品简介', briefTranslations: { en: 'Product description' } }), 'fr'), '我是产品简介');
+assert.equal(getProductDescription(product({ brief: '' })), '');
 assert.equal(getProductCardImage(product({ images: ['main.jpg'] })), 'main.jpg');
 assert.deepEqual(getProductCardGalleryImages(product({ images: ['main.jpg'], colorOptions: [{ name: 'c1', thumbnail: 'ecru.jpg' }] })), ['main.jpg', 'ecru.jpg']);
 assert.equal(getProductCardImage(product({ images: ['main.jpg'], colorOptions: [{ name: 'c1', thumbnail: 'ecru.jpg' }] }), 1), 'ecru.jpg');

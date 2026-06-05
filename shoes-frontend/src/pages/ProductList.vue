@@ -2,23 +2,21 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-vue-next';
+import ProductCard from '../components/ProductCard.vue';
 import ClientLayout from '../layouts/ClientLayout.vue';
 import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
-import { resolveProductImage } from '../utils/api';
 import type { Product } from '../types';
-import { formatProductPrice, getProductCardGalleryImages, getProductCardImage, getProductTitle } from '../utils/productDisplay';
 
 const ITEMS_PER_PAGE = 20;
 const route = useRoute();
 const router = useRouter();
-const { t, lang } = useLanguage();
+const { t } = useLanguage();
 const { categories, getCategoryName } = useCategories();
 const { fetchProductsPage } = useProducts();
 const searchInput = ref((route.query.search as string) || '');
 const pageProducts = ref<Product[]>([]);
-const selectedImageByProduct = ref<Record<string, number>>({});
 const totalItems = ref(0);
 const totalPages = ref(0);
 const isLoading = ref(false);
@@ -49,21 +47,6 @@ const setQuery = (query: Record<string, string>) => {
 };
 const handleSearch = () => setQuery(searchInput.value ? { search: searchInput.value } : {});
 const selectCategory = (catId: string) => setQuery({ category: catId });
-const selectCardImage = (product: Product, index: number) => {
-  selectedImageByProduct.value = { ...selectedImageByProduct.value, [product.id]: index };
-};
-const shiftCardImage = (product: Product, direction: number) => {
-  const gallery = getProductCardGalleryImages(product);
-  if (gallery.length <= 1) {
-    return;
-  }
-  const current = selectedImageByProduct.value[product.id] || 0;
-  selectCardImage(product, (current + direction + gallery.length) % gallery.length);
-};
-const selectColor = (product: Product, thumbnail: string) => {
-  const index = getProductCardGalleryImages(product).findIndex((image) => image === thumbnail);
-  selectCardImage(product, index >= 0 ? index : 0);
-};
 const goPage = (page: number) => {
   const nextPage = Math.min(Math.max(page, 1), Math.max(totalPages.value, 1));
   const query: Record<string, string> = {};
@@ -150,49 +133,12 @@ watch([categoryParam, searchParam, currentPage], () => {
 
       <template v-else>
         <div class="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 lg:grid-cols-5">
-          <div v-for="product in pageProducts" :key="product.id" class="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
-            <RouterLink :to="`/product/${product.id}`" class="relative block aspect-square overflow-hidden bg-gray-50">
-              <img :src="resolveProductImage([getProductCardImage(product, selectedImageByProduct[product.id])])" :alt="product.id" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
-              <button v-if="getProductCardGalleryImages(product).length > 1" type="button" class="absolute left-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="shiftCardImage(product, -1)">
-                <ChevronLeft class="h-5 w-5" />
-              </button>
-              <button v-if="getProductCardGalleryImages(product).length > 1" type="button" class="absolute right-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="shiftCardImage(product, 1)">
-                <ChevronRight class="h-5 w-5" />
-              </button>
-            </RouterLink>
-            <div v-if="getProductCardGalleryImages(product).length > 1" class="flex gap-1 px-2 pt-1.5">
-              <button
-                v-for="(_, index) in getProductCardGalleryImages(product)"
-                :key="index"
-                type="button"
-                class="h-1 w-full rounded-full transition-colors"
-                :class="(selectedImageByProduct[product.id] || 0) === index ? 'bg-gray-500' : 'bg-gray-200'"
-                :aria-label="`Go to product image ${index + 1}`"
-                @click.prevent.stop="selectCardImage(product, index)"
-              />
-            </div>
-            <div class="flex flex-grow flex-col p-4 text-center lg:text-left rtl:lg:text-right">
-              <p class="mb-1 font-mono text-xs text-gray-400">ID: {{ product.id }}</p>
-              <h3 class="mb-1 line-clamp-1 text-sm font-medium text-gray-900">
-                {{ getProductTitle(product, getCategoryName(product.category), lang) }}
-              </h3>
-              <p class="mt-auto pt-3 text-sm font-semibold text-blue-600">{{ formatProductPrice(product.price) }}</p>
-              <div v-if="product.colorOptions.length" class="mt-3 flex items-center justify-center gap-2 lg:justify-start rtl:lg:justify-end">
-                <button
-                  v-for="(color, index) in product.colorOptions.slice(0, 4)"
-                  :key="`${product.id}-${color.thumbnail}-${index}`"
-                  type="button"
-                  class="h-8 w-8 overflow-hidden rounded border bg-gray-100 transition-colors"
-                  :class="getProductCardImage(product, selectedImageByProduct[product.id]) === color.thumbnail ? 'border-gray-900' : 'border-gray-200 hover:border-gray-400'"
-                  :title="`c${index + 1}`"
-                  @click.prevent.stop="selectColor(product, color.thumbnail)"
-                >
-                  <img :src="resolveProductImage([color.thumbnail])" alt="" class="h-full w-full object-cover" loading="lazy" />
-                </button>
-                <span v-if="product.colorOptions.length > 4" class="text-xs font-medium text-gray-500">+{{ product.colorOptions.length - 4 }}</span>
-              </div>
-            </div>
-          </div>
+          <ProductCard
+            v-for="product in pageProducts"
+            :key="product.id"
+            :product="product"
+            :category-name="getCategoryName(product.category)"
+          />
         </div>
 
         <div v-if="totalPages > 1" class="mt-12 flex items-center justify-center gap-2" dir="ltr">
