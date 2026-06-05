@@ -18,6 +18,11 @@ function normalize(value: unknown): Category[] {
     .map((item) => ({
       id: typeof item?.id === 'string' ? item.id.trim() : '',
       name: typeof item?.name === 'string' ? item.name.trim() : '',
+      translations: item && typeof item === 'object' && (item as { translations?: unknown }).translations && typeof (item as { translations?: unknown }).translations === 'object'
+        ? Object.fromEntries(Object.entries((item as { translations: Record<string, unknown> }).translations)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+          .map(([key, value]) => [key, value.trim()]))
+        : undefined,
     }))
     .filter((item) => item.id && item.name && !seen.has(item.id) && seen.add(item.id));
 }

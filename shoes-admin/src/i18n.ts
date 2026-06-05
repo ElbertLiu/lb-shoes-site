@@ -13,6 +13,22 @@ export const languages = {
 };
 
 export type LanguageCode = keyof typeof languages;
+export const languageFlags: Record<LanguageCode, string> = {
+  zh: '🇨🇳',
+  en: '🇺🇸',
+  es: '🇪🇸',
+  fr: '🇫🇷',
+  de: '🇩🇪',
+  ar: '🇸🇦',
+  ru: '🇷🇺',
+  ja: '🇯🇵',
+  ko: '🇰🇷',
+};
+export const languageOptions = Object.entries(languages).map(([code, name]) => ({
+  code: code as LanguageCode,
+  name,
+  flag: languageFlags[code as LanguageCode],
+}));
 const DEFAULT_LANGUAGE: LanguageCode = 'en';
 
 const isLanguageCode = (value: string): value is LanguageCode => Object.prototype.hasOwnProperty.call(languages, value);

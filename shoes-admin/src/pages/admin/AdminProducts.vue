@@ -3,12 +3,14 @@ import { computed, reactive, ref, watch } from 'vue';
 import { Delete, Edit, Plus, Rank, RefreshLeft, Search, Upload, View } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import AdminLayout from '../../layouts/AdminLayout.vue';
+import { languageOptions } from '../../i18n';
 import { useCategories } from '../../stores/categories';
 import { useProducts } from '../../stores/products';
 import { getAuthHeaders, logout } from '../../stores/auth';
 import type { Product } from '../../types';
 import { API_BASE_URL, resolveMediaUrl } from '../../utils/api';
 import { IMAGE_TARGET_BYTES, MAX_PRODUCT_IMAGES, prepareImageForUpload } from '../../utils/imageCompression';
+import { cleanTranslations } from '../../utils/translation';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400';
 const { categories, getCategoryName } = useCategories();
@@ -27,6 +29,7 @@ const previewProduct = ref<Product | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const formRef = ref();
 const uploadingImages = ref(false);
+const uploadingColorIndex = ref<number | null>(null);
 const uploadStatus = ref('');
 const draggingImageIndex = ref<number | null>(null);
 const dragOverImageIndex = ref<number | null>(null);
@@ -34,11 +37,13 @@ const formData = reactive<Product>({
   id: '',
   name: '',
   brief: '',
+  briefTranslations: {},
   price: '',
   category: categories.value[0]?.id || '',
   inStock: true,
   featured: false,
   images: [''],
+  colorOptions: [],
 });
 
 const filteredProducts = computed(() => {
@@ -88,20 +93,28 @@ const persistProducts = async (nextProducts: Product[]) => {
   }
 };
 const cleanImages = (images: string[]) => images.map((image) => image.trim()).filter(Boolean);
+const translationLanguageOptions = languageOptions.filter((option) => option.code !== 'zh');
 const previewImages = (images: string[]) => cleanImages(images).map(resolveMediaUrl);
 const firstImage = (images: string[]) => resolveMediaUrl(cleanImages(images)[0] || FALLBACK_IMAGE);
 const resetForm = (product?: Product) => {
   Object.assign(formData, product
-    ? { ...product, images: product.images.length ? [...product.images.slice(0, MAX_PRODUCT_IMAGES)] : [''] }
+    ? {
+      ...product,
+      briefTranslations: { ...(product.briefTranslations || {}) },
+      images: product.images.length ? [...product.images.slice(0, MAX_PRODUCT_IMAGES)] : [''],
+      colorOptions: product.colorOptions?.map((option) => ({ ...option })) || [],
+    }
     : {
       id: '',
       name: '',
       brief: '',
+      briefTranslations: {},
       price: '',
       category: categories.value[0]?.id || '',
       inStock: true,
       featured: false,
       images: [''],
+      colorOptions: [],
     });
 };
 const openCreate = () => {
@@ -162,6 +175,11 @@ const handleBatchFeatured = async (value: boolean) => {
 const handleSubmit = async () => {
   await formRef.value?.validate();
   const images = cleanImages(formData.images).slice(0, MAX_PRODUCT_IMAGES);
+  if (formData.colorOptions.some((option) => !option.thumbnail.trim())) {
+    ElMessage.error('每个颜色都必须上传缩略图');
+    return;
+  }
+
   const saved: Product = {
     id: formData.id.trim(),
     name: formData.name.trim(),
@@ -171,6 +189,10 @@ const handleSubmit = async () => {
     inStock: formData.inStock,
     featured: formData.featured,
     images: images.length ? images : [FALLBACK_IMAGE],
+    briefTranslations: cleanTranslations(formData.briefTranslations),
+    colorOptions: formData.colorOptions
+      .map((option, index) => ({ name: `c${index + 1}`, thumbnail: option.thumbnail.trim() }))
+      .filter((option) => option.thumbnail),
   };
 
   const duplicate = productList.value.some((product) => product.id === saved.id && !isEditing.value);
@@ -191,6 +213,15 @@ const addImageField = () => {
     return;
   }
   formData.images.push('');
+};
+const addColorOption = () => {
+  formData.colorOptions.push({ name: `c${formData.colorOptions.length + 1}`, thumbnail: '' });
+};
+const removeColorOption = (index: number) => {
+  formData.colorOptions.splice(index, 1);
+  formData.colorOptions.forEach((option, optionIndex) => {
+    option.name = `c${optionIndex + 1}`;
+  });
 };
 const removeImageField = (index: number) => {
   if (formData.images.length === 1) {
@@ -299,6 +330,46 @@ const uploadLocalImages = async (files: File[]) => {
     uploadStatus.value = '';
   }
 };
+const uploadColorThumbnail = async (file: File, index: number) => {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('只能上传图片文件');
+    return;
+  }
+
+  uploadingColorIndex.value = index;
+  try {
+    const preparedImage = await prepareImageForUpload(file);
+    const uploadPayload = new FormData();
+    uploadPayload.append('images', preparedImage.file);
+    const response = await fetch(`${API_BASE_URL}/uploads/images`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: uploadPayload,
+    });
+    const data = await response.json() as { files?: { path?: string }[]; error?: string };
+    if (response.status === 401) {
+      logout();
+      throw new Error('登录已过期，请重新登录');
+    }
+    if (!response.ok || !Array.isArray(data.files) || !data.files[0]?.path) {
+      throw new Error(data.error || '缩略图上传失败');
+    }
+    formData.colorOptions[index].thumbnail = data.files[0].path;
+    ElMessage.success('颜色缩略图已上传');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '缩略图上传失败');
+  } finally {
+    uploadingColorIndex.value = null;
+  }
+};
+const handleColorThumbnailChange = async (event: Event, index: number) => {
+  const input = event.target as HTMLInputElement;
+  const [file] = Array.from(input.files || []);
+  if (file) {
+    await uploadColorThumbnail(file, index);
+  }
+  input.value = '';
+};
 const handleImageInputChange = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   await uploadLocalImages(Array.from(input.files || []));
@@ -376,6 +447,16 @@ const handleSelectionChange = (rows: Product[]) => {
           <template #default="{ row }">{{ getCategoryName(row.category) }}</template>
         </el-table-column>
         <el-table-column prop="price" label="价格" min-width="150" />
+        <el-table-column label="颜色" min-width="160">
+          <template #default="{ row }">
+            <div v-if="row.colorOptions?.length" class="flex flex-wrap gap-1">
+              <el-tag v-for="color in row.colorOptions" :key="`${row.id}-${color.name}`" size="small" effect="plain">
+                {{ color.name }}
+              </el-tag>
+            </div>
+            <span v-else class="text-[#909399]">未设置</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="brief" label="简介" min-width="150" show-overflow-tooltip />
         <el-table-column label="首页精选" width="110">
           <template #default="{ row }">
@@ -443,6 +524,25 @@ const handleSelectionChange = (rows: Product[]) => {
         <el-form-item label="产品简介">
           <el-input v-model="formData.brief" type="textarea" :rows="3" placeholder="简短的产品介绍" />
         </el-form-item>
+        <el-form-item label="多语言简介">
+          <div class="flex w-full flex-col gap-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-[#909399]">留空时官网会显示中文简介</span>
+            </div>
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <el-input
+                v-for="option in translationLanguageOptions"
+                :key="option.code"
+                v-model="formData.briefTranslations![option.code]"
+                type="textarea"
+                :rows="2"
+                :placeholder="`${option.flag} ${option.name}`"
+              >
+                <template #prepend>{{ option.code.toUpperCase() }}</template>
+              </el-input>
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="现货状态">
           <el-radio-group v-model="formData.inStock">
             <el-radio :value="true">现货充足</el-radio>
@@ -451,6 +551,39 @@ const handleSelectionChange = (rows: Product[]) => {
         </el-form-item>
         <el-form-item label="首页精选">
           <el-switch v-model="formData.featured" active-text="展示在官网首页" inactive-text="不展示" />
+        </el-form-item>
+        <el-form-item label="颜色缩略图">
+          <div class="flex w-full flex-col gap-3">
+            <div
+              v-for="(color, index) in formData.colorOptions"
+              :key="index"
+              class="grid grid-cols-1 gap-2 rounded-lg border border-[#ebeef5] p-3 md:grid-cols-[64px_1fr_auto]"
+            >
+              <div class="flex h-10 items-center justify-center rounded border border-[#dcdfe6] bg-[#f5f7fa] text-sm font-medium text-[#606266]">
+                c{{ index + 1 }}
+              </div>
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="h-12 w-12 shrink-0 overflow-hidden rounded border border-[#dcdfe6] bg-[#f5f7fa]">
+                  <el-image v-if="color.thumbnail" :src="resolveMediaUrl(color.thumbnail)" fit="cover" class="h-full w-full" />
+                </div>
+                <el-input v-model="color.thumbnail" placeholder="上传后自动生成缩略图地址" readonly />
+              </div>
+              <div class="flex items-center gap-2">
+                <el-button size="small" :icon="Upload" :loading="uploadingColorIndex === index" class="relative overflow-hidden">
+                  上传缩略图
+                  <input
+                    type="file"
+                    accept="image/*"
+                    class="absolute inset-0 cursor-pointer opacity-0"
+                    @change="handleColorThumbnailChange($event, index)"
+                  />
+                </el-button>
+                <el-button size="small" :icon="Delete" @click="removeColorOption(index)" />
+              </div>
+            </div>
+            <el-button :icon="Plus" @click="addColorOption">添加颜色</el-button>
+            <p class="text-xs text-[#909399]">新增颜色会自动编号为 c1、c2，以此类推；每个颜色都必须上传缩略图，前台只显示缩略图做快速颜色预览。</p>
+          </div>
         </el-form-item>
         <el-form-item label="产品图片">
           <div class="flex w-full flex-col gap-3">
@@ -526,6 +659,16 @@ const handleSelectionChange = (rows: Product[]) => {
           <p><span class="text-[#909399]">状态：</span>{{ previewProduct.inStock ? '现货' : '定做' }}</p>
           <p><span class="text-[#909399]">首页精选：</span>{{ previewProduct.featured ? '是' : '否' }}</p>
           <p><span class="text-[#909399]">简介：</span>{{ previewProduct.brief || '--' }}</p>
+          <p><span class="text-[#909399]">简介翻译：</span>{{ Object.keys(previewProduct.briefTranslations || {}).length }} 种语言</p>
+          <div>
+            <span class="text-[#909399]">颜色：</span>
+            <div v-if="previewProduct.colorOptions?.length" class="mt-2 flex flex-wrap gap-2">
+              <div v-for="(color, index) in previewProduct.colorOptions" :key="`${color.thumbnail}-${index}`" class="rounded border border-[#ebeef5] p-1">
+                <el-image :src="resolveMediaUrl(color.thumbnail)" fit="cover" class="h-8 w-8 rounded bg-[#f5f7fa]" />
+              </div>
+            </div>
+            <span v-else>--</span>
+          </div>
         </div>
       </div>
     </el-dialog>

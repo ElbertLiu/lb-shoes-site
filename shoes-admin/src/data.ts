@@ -24,6 +24,7 @@ export const generateProducts = (count: number): Product[] => {
       inStock: Math.random() > 0.2,
       featured: i <= 20,
       category: category,
+      colorOptions: [],
       images: [
         `https://images.unsplash.com/photo-1542291026-7eec264c27ff?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w1MTY0NTR8MHwxfHNlYXJjaHwxfHxzaG9lc3xlbnwwfHx8fDE3MTI0NTgwMzh8MA&ixlib=rb-4.0.3&q=80&w=400`,
         `https://images.unsplash.com/photo-1460353581641-37baddab0fa2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400`,

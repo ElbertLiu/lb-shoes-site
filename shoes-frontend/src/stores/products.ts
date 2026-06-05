@@ -41,12 +41,25 @@ function normalize(value: unknown): Product[] {
       id: typeof item?.id === 'string' ? item.id.trim() : '',
       name: typeof item?.name === 'string' ? item.name.trim() : '',
       brief: typeof item?.brief === 'string' ? item.brief.trim() : '',
+      briefTranslations: item && typeof item === 'object' && (item as { briefTranslations?: unknown }).briefTranslations && typeof (item as { briefTranslations?: unknown }).briefTranslations === 'object'
+        ? Object.fromEntries(Object.entries((item as { briefTranslations: Record<string, unknown> }).briefTranslations)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+          .map(([key, value]) => [key, value.trim()]))
+        : undefined,
       price: typeof item?.price === 'string' ? item.price.trim() : '',
       category: typeof item?.category === 'string' ? item.category.trim() : '',
       inStock: Boolean(item?.inStock),
       featured: typeof item?.featured === 'boolean' ? item.featured : index < 20,
       images: Array.isArray(item?.images)
         ? item.images.filter((image: unknown) => typeof image === 'string' && image.trim()).map((image: string) => image.trim())
+        : [],
+      colorOptions: Array.isArray(item?.colorOptions)
+        ? item.colorOptions
+          .map((option: unknown, index: number) => ({
+            name: typeof (option as { name?: unknown })?.name === 'string' && (option as { name: string }).name.trim() ? (option as { name: string }).name.trim() : `c${index + 1}`,
+            thumbnail: typeof (option as { thumbnail?: unknown })?.thumbnail === 'string' ? (option as { thumbnail: string }).thumbnail.trim() : '',
+          }))
+          .filter((option) => option.name && option.thumbnail)
         : [],
     }))
     .filter((item) => item.id && item.name && item.category && !seen.has(item.id) && seen.add(item.id));

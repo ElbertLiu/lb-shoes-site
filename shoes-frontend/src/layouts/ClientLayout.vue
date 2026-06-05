@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Box, ChevronDown, Globe, Home, Phone, Search } from 'lucide-vue-next';
-import { languages, type LanguageCode, useLanguage } from '../i18n';
+import { languageOptions, languages, type LanguageCode, useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import ToastHost from '../components/ToastHost.vue';
@@ -68,19 +68,20 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', closeOnOutside))
           <div ref="dropdownRef" class="relative">
             <button class="flex items-center rounded-full bg-gray-50 px-3 py-1.5 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900" @click="showLangMenu = !showLangMenu">
               <Globe class="mr-1.5 h-4 w-4" />
-              <span class="mr-1">{{ languages[lang] }}</span>
+              <span class="mr-1">{{ languageOptions.find((option) => option.code === lang)?.flag }} {{ languages[lang] }}</span>
               <ChevronDown class="h-3.5 w-3.5" />
             </button>
 
-            <div v-if="showLangMenu" class="absolute right-0 top-full z-50 mt-1 w-32 rounded-lg border border-gray-100 bg-white py-1 shadow-lg">
+            <div v-if="showLangMenu" class="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-lg">
               <button
-                v-for="(name, code) in languages"
-                :key="code"
-                class="w-full px-4 py-2 text-left text-sm transition-colors"
-                :class="lang === code ? 'bg-blue-50 font-medium text-blue-600' : 'text-gray-700 hover:bg-gray-50'"
-                @click="chooseLanguage(code)"
+                v-for="option in languageOptions"
+                :key="option.code"
+                class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors"
+                :class="lang === option.code ? 'bg-blue-50 font-medium text-blue-600' : 'text-gray-700 hover:bg-gray-50'"
+                @click="chooseLanguage(option.code)"
               >
-                {{ name }}
+                <span aria-hidden="true">{{ option.flag }}</span>
+                <span>{{ option.name }}</span>
               </button>
             </div>
           </div>
@@ -108,7 +109,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', closeOnOutside))
       </RouterLink>
       <div class="flex items-center gap-2">
         <select :value="lang" class="relative rounded-full border-0 bg-gray-100 py-1.5 pl-3 pr-6 text-xs text-gray-700 outline-none" @change="chooseLanguage(($event.target as HTMLSelectElement).value)">
-          <option v-for="(_, code) in languages" :key="code" :value="code">{{ String(code).toUpperCase() }}</option>
+          <option v-for="option in languageOptions" :key="option.code" :value="option.code">{{ option.flag }} {{ option.code.toUpperCase() }}</option>
         </select>
         <RouterLink :to="firstCategoryPath" class="rounded-full p-2 text-gray-600 hover:bg-gray-100">
           <Search class="h-5 w-5" />

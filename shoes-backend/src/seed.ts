@@ -33,6 +33,7 @@ export function generateProducts(count: number): Product[] {
       inStock: i % 5 !== 0,
       featured: i <= 20,
       category,
+      colorOptions: [],
       images: [...productImages],
     };
   });

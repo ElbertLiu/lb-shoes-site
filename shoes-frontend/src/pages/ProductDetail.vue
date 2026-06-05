@@ -9,6 +9,7 @@ import { useProducts } from '../stores/products';
 import { useToast } from '../composables/useToast';
 import { resolveMediaUrl, resolveProductImage } from '../utils/api';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { getProductDescription, getProductTitle } from '../utils/productDisplay';
 
 const route = useRoute();
 const { t, lang } = useLanguage();
@@ -22,18 +23,30 @@ const productId = computed(() => String(route.params.id || ''));
 const product = computed(() => products.value.find((p) => p.id === productId.value));
 const isRtl = computed(() => lang.value === 'ar');
 const productImages = computed(() => product.value?.images.map((image) => image.trim()).filter(Boolean) || []);
-const currentProductImage = computed(() => resolveProductImage(product.value?.images, currentImageIndex.value));
-const hasMultipleImages = computed(() => productImages.value.length > 1);
+const colorImages = computed(() => product.value?.colorOptions.map((color) => color.thumbnail.trim()).filter(Boolean) || []);
+const galleryImages = computed(() => {
+  const seen = new Set<string>();
+  return [...productImages.value, ...colorImages.value].filter((image) => !seen.has(image) && seen.add(image));
+});
+const currentProductImage = computed(() => resolveProductImage(galleryImages.value, currentImageIndex.value));
+const hasMultipleImages = computed(() => galleryImages.value.length > 1);
+const productCategoryName = computed(() => product.value ? getCategoryName(product.value.category) : '');
+const productTitle = computed(() => product.value ? getProductTitle(product.value, productCategoryName.value, lang.value) : '');
+const productDescription = computed(() => product.value ? getProductDescription(product.value, t('product.desc') as string, lang.value) : '');
 
 const nextImage = () => {
   if (hasMultipleImages.value) {
-    currentImageIndex.value = (currentImageIndex.value + 1) % productImages.value.length;
+    currentImageIndex.value = (currentImageIndex.value + 1) % galleryImages.value.length;
   }
 };
 const prevImage = () => {
   if (hasMultipleImages.value) {
-    currentImageIndex.value = currentImageIndex.value === 0 ? productImages.value.length - 1 : currentImageIndex.value - 1;
+    currentImageIndex.value = currentImageIndex.value === 0 ? galleryImages.value.length - 1 : currentImageIndex.value - 1;
   }
+};
+const selectColorImage = (thumbnail: string) => {
+  const index = galleryImages.value.findIndex((image) => image === thumbnail);
+  currentImageIndex.value = index >= 0 ? index : 0;
 };
 const copyToClipboard = async (text: string) => {
   const copied = await copyTextToClipboard(text);
@@ -66,16 +79,28 @@ watch(productId, (id) => {
         <div class="flex w-full flex-col gap-4 lg:w-1/2">
           <div class="group relative aspect-square overflow-hidden rounded-2xl bg-gray-50 md:aspect-[4/3] lg:aspect-square">
             <img :src="currentProductImage" :alt="product.name" class="h-full w-full object-cover" />
-            <button v-if="hasMultipleImages" class="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="prevImage">
+            <button v-if="hasMultipleImages" class="absolute left-0 top-1/2 flex h-10 w-9 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click="prevImage">
               <ChevronLeft class="h-5 w-5 rtl:rotate-180" />
             </button>
-            <button v-if="hasMultipleImages" class="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-gray-800 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100" @click="nextImage">
+            <button v-if="hasMultipleImages" class="absolute right-0 top-1/2 flex h-10 w-9 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click="nextImage">
               <ChevronRight class="h-5 w-5 rtl:rotate-180" />
             </button>
           </div>
 
-          <div v-if="productImages.length" class="thumbnail-scrollbar flex gap-4 overflow-x-auto pb-3">
-            <button v-for="(img, idx) in productImages" :key="`${img}-${idx}`" class="aspect-square w-28 shrink-0 overflow-hidden rounded-lg border-2 transition-colors sm:w-32 md:w-36 lg:w-[calc((100%_-_3rem)/4)]" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
+          <div v-if="galleryImages.length > 1" class="flex gap-1.5 px-1">
+            <button
+              v-for="(_, idx) in galleryImages"
+              :key="idx"
+              type="button"
+              class="h-1 flex-1 rounded-full transition-colors"
+              :class="currentImageIndex === idx ? 'bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'"
+              :aria-label="`Go to image ${idx + 1}`"
+              @click="currentImageIndex = idx"
+            />
+          </div>
+
+          <div v-if="galleryImages.length" class="thumbnail-scrollbar flex gap-2 overflow-x-auto pb-2">
+            <button v-for="(img, idx) in galleryImages" :key="`${img}-${idx}`" class="aspect-square w-20 shrink-0 overflow-hidden rounded-md border transition-colors sm:w-24 md:w-28 lg:w-24" :class="currentImageIndex === idx ? 'border-gray-900' : 'border-transparent hover:border-gray-200'" @click="currentImageIndex = idx">
               <img :src="resolveMediaUrl(img)" alt="" class="h-full w-full object-cover" />
             </button>
           </div>
@@ -83,16 +108,32 @@ watch(productId, (id) => {
 
         <div class="flex w-full flex-col py-2 lg:w-1/2 lg:py-6">
           <div class="mb-2 flex items-center gap-3">
-            <span class="rounded bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">{{ getCategoryName(product.category) }}</span>
+            <span class="rounded bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">{{ productCategoryName }}</span>
             <span class="font-mono text-sm font-medium text-gray-400">#{{ product.id }}</span>
           </div>
 
           <h1 class="mb-4 text-3xl font-bold text-gray-900 md:text-4xl">
-            {{ t('products.newProduct', { cat: getCategoryName(product.category), style: product.brief }) }}
+            {{ productTitle }}
           </h1>
 
           <div class="prose prose-sm mb-8 max-w-none text-gray-500">
-            <p>{{ t('product.desc') }}</p>
+            <p>{{ productDescription }}</p>
+          </div>
+
+          <div v-if="product.colorOptions.length" class="mb-8">
+            <p class="mb-3 text-sm font-medium text-gray-500">Colors</p>
+            <div class="flex flex-wrap gap-3">
+              <button
+                v-for="(color, index) in product.colorOptions"
+                :key="`${color.thumbnail}-${index}`"
+                type="button"
+                class="h-12 w-12 overflow-hidden rounded-lg border bg-white transition-colors hover:border-gray-900"
+                :class="galleryImages[currentImageIndex] === color.thumbnail ? 'border-gray-900' : 'border-gray-200'"
+                @click="selectColorImage(color.thumbnail)"
+              >
+                <img :src="resolveMediaUrl(color.thumbnail)" alt="" class="h-full w-full object-cover" />
+              </button>
+            </div>
           </div>
 
           <div class="mb-8 flex flex-col gap-4 border-y border-gray-100 py-6">

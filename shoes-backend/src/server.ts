@@ -8,6 +8,7 @@ import cors from 'cors';
 import express from 'express';
 import multer from 'multer';
 import { readDatabase, updateDatabase } from './store.js';
+import { isSupportedTranslationLanguage, translateText } from './translation.js';
 import type { Category, Product } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -166,14 +167,32 @@ function normalizeImages(value: unknown) {
   return value.filter((image): image is string => typeof image === 'string' && Boolean(image.trim())).map((image) => image.trim());
 }
 
+function normalizeColorOptions(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((option, index) => ({
+      name: typeof option?.name === 'string' && option.name.trim() ? option.name.trim() : `c${index + 1}`,
+      thumbnail: typeof option?.thumbnail === 'string' ? option.thumbnail.trim() : '',
+    }))
+    .filter((option) => option.name && option.thumbnail);
+}
+
 function parseProduct(body: unknown, fallback?: Product): Product | null {
   const value = body as Partial<Product>;
   const id = typeof value.id === 'string' ? value.id.trim() : fallback?.id || '';
   const name = typeof value.name === 'string' ? value.name.trim() : fallback?.name || '';
   const brief = typeof value.brief === 'string' ? value.brief.trim() : fallback?.brief || '';
+  const briefTranslations = value.briefTranslations && typeof value.briefTranslations === 'object'
+    ? Object.fromEntries(Object.entries(value.briefTranslations)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+      .map(([key, translation]) => [key, translation.trim()]))
+    : fallback?.briefTranslations;
   const price = typeof value.price === 'string' ? value.price.trim() : fallback?.price || '';
   const category = typeof value.category === 'string' ? value.category.trim() : fallback?.category || '';
   const images = value.images !== undefined ? normalizeImages(value.images) : fallback?.images || [];
+  const colorOptions = value.colorOptions !== undefined ? normalizeColorOptions(value.colorOptions) : fallback?.colorOptions || [];
 
   if (!id || !name || !category) {
     return null;
@@ -183,11 +202,13 @@ function parseProduct(body: unknown, fallback?: Product): Product | null {
     id,
     name,
     brief,
+    ...(briefTranslations && Object.keys(briefTranslations).length ? { briefTranslations } : {}),
     price,
     category,
     inStock: typeof value.inStock === 'boolean' ? value.inStock : fallback?.inStock ?? true,
     featured: typeof value.featured === 'boolean' ? value.featured : fallback?.featured ?? false,
     images,
+    colorOptions,
   };
 }
 
@@ -195,7 +216,12 @@ function parseCategory(body: unknown, fallback?: Category): Category | null {
   const value = body as Partial<Category>;
   const id = typeof value.id === 'string' ? value.id.trim() : fallback?.id || '';
   const name = typeof value.name === 'string' ? value.name.trim() : fallback?.name || '';
-  return id && name ? { id, name } : null;
+  const translations = value.translations && typeof value.translations === 'object'
+    ? Object.fromEntries(Object.entries(value.translations)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+      .map(([key, translation]) => [key, translation.trim()]))
+    : fallback?.translations;
+  return id && name ? { id, name, ...(translations && Object.keys(translations).length ? { translations } : {}) } : null;
 }
 
 function buildPublicUrl(req: express.Request, pathname: string) {
@@ -287,6 +313,34 @@ app.post('/api/uploads/images', requireAuth, upload.array('images', 12), async (
     const savedFiles = await Promise.all(files.map((file) => saveUploadedImage(req, file)));
 
     res.status(201).json({ files: savedFiles });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations', requireAuth, async (req, res, next) => {
+  try {
+    const body = req.body as { text?: unknown; source?: unknown; target?: unknown };
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    const source = typeof body.source === 'string' ? body.source.trim().toLowerCase() : 'zh';
+    const target = typeof body.target === 'string' ? body.target.trim().toLowerCase() : '';
+
+    if (!text) {
+      res.status(400).json(badRequest('翻译文本不能为空'));
+      return;
+    }
+    if (!isSupportedTranslationLanguage(target)) {
+      res.status(400).json(badRequest('不支持该目标语言'));
+      return;
+    }
+
+    const translatedText = await translateText(text, target, source);
+    if (!translatedText) {
+      res.status(503).json(badRequest('后端未配置翻译服务，请配置 OPENAI_API_KEY 或 TRANSLATION_API_URL'));
+      return;
+    }
+
+    res.json({ translatedText, source, target });
   } catch (error) {
     next(error);
   }

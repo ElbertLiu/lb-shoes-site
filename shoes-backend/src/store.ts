@@ -24,7 +24,12 @@ function normalizeCategory(item: unknown): Category | null {
   const value = item as Partial<Category>;
   const id = typeof value.id === 'string' ? value.id.trim() : '';
   const name = typeof value.name === 'string' ? value.name.trim() : '';
-  return id && name ? { id, name } : null;
+  const translations = value.translations && typeof value.translations === 'object'
+    ? Object.fromEntries(Object.entries(value.translations)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+      .map(([key, translation]) => [key, translation.trim()]))
+    : undefined;
+  return id && name ? { id, name, ...(translations && Object.keys(translations).length ? { translations } : {}) } : null;
 }
 
 function normalizeProduct(item: unknown): Product | null {
@@ -32,10 +37,23 @@ function normalizeProduct(item: unknown): Product | null {
   const id = typeof value.id === 'string' ? value.id.trim() : '';
   const name = typeof value.name === 'string' ? value.name.trim() : '';
   const brief = typeof value.brief === 'string' ? value.brief.trim() : '';
+  const briefTranslations = value.briefTranslations && typeof value.briefTranslations === 'object'
+    ? Object.fromEntries(Object.entries(value.briefTranslations)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+      .map(([key, translation]) => [key, translation.trim()]))
+    : undefined;
   const price = typeof value.price === 'string' ? value.price.trim() : '';
   const category = typeof value.category === 'string' ? value.category.trim() : '';
   const images = Array.isArray(value.images)
     ? value.images.filter((image): image is string => typeof image === 'string' && Boolean(image.trim())).map((image) => image.trim())
+    : [];
+  const colorOptions = Array.isArray(value.colorOptions)
+    ? value.colorOptions
+      .map((option, index) => ({
+        name: typeof option?.name === 'string' && option.name.trim() ? option.name.trim() : `c${index + 1}`,
+        thumbnail: typeof option?.thumbnail === 'string' ? option.thumbnail.trim() : '',
+      }))
+      .filter((option) => option.name && option.thumbnail)
     : [];
 
   if (!id || !name || !category) {
@@ -46,11 +64,13 @@ function normalizeProduct(item: unknown): Product | null {
     id,
     name,
     brief,
+    ...(briefTranslations && Object.keys(briefTranslations).length ? { briefTranslations } : {}),
     price,
     category,
     inStock: Boolean(value.inStock),
     featured: Boolean(value.featured),
     images,
+    colorOptions,
   };
 }
 
@@ -84,6 +104,7 @@ async function ensureSchema() {
       CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        translations JSONB NOT NULL DEFAULT '{}'::jsonb,
         sort_order INTEGER NOT NULL DEFAULT 0
       );
 
@@ -91,15 +112,20 @@ async function ensureSchema() {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         brief TEXT NOT NULL DEFAULT '',
+        brief_translations JSONB NOT NULL DEFAULT '{}'::jsonb,
         price TEXT NOT NULL DEFAULT '',
         category TEXT NOT NULL,
         in_stock BOOLEAN NOT NULL DEFAULT true,
         featured BOOLEAN NOT NULL DEFAULT false,
         images JSONB NOT NULL DEFAULT '[]'::jsonb,
+        color_options JSONB NOT NULL DEFAULT '[]'::jsonb,
         sort_order INTEGER NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
+    await pool.query("ALTER TABLE categories ADD COLUMN IF NOT EXISTS translations JSONB NOT NULL DEFAULT '{}'::jsonb");
+    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS brief_translations JSONB NOT NULL DEFAULT '{}'::jsonb");
+    await pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS color_options JSONB NOT NULL DEFAULT '[]'::jsonb");
   })();
   await schemaReady;
 }
@@ -111,9 +137,9 @@ async function readPostgresDatabase(): Promise<Database> {
   await ensureSchema();
 
   const [categoriesResult, productsResult] = await Promise.all([
-    pool.query('SELECT id, name FROM categories ORDER BY sort_order ASC, id ASC'),
+    pool.query('SELECT id, name, translations FROM categories ORDER BY sort_order ASC, id ASC'),
     pool.query(`
-      SELECT id, name, brief, price, category, in_stock, featured, images
+      SELECT id, name, brief, brief_translations, price, category, in_stock, featured, images, color_options
       FROM products
       ORDER BY sort_order ASC, id ASC
     `),
@@ -123,16 +149,19 @@ async function readPostgresDatabase(): Promise<Database> {
     categories: categoriesResult.rows.map((row) => ({
       id: row.id,
       name: row.name,
+      translations: row.translations,
     })),
     products: productsResult.rows.map((row) => ({
       id: row.id,
       name: row.name,
       brief: row.brief,
+      briefTranslations: row.brief_translations,
       price: row.price,
       category: row.category,
       inStock: row.in_stock,
       featured: row.featured,
       images: row.images,
+      colorOptions: row.color_options,
     })),
   });
 
@@ -158,25 +187,27 @@ async function writePostgresDatabase(database: Database): Promise<void> {
 
     for (const [index, category] of normalized.categories.entries()) {
       await client.query(
-        'INSERT INTO categories (id, name, sort_order) VALUES ($1, $2, $3)',
-        [category.id, category.name, index],
+        'INSERT INTO categories (id, name, translations, sort_order) VALUES ($1, $2, $3::jsonb, $4)',
+        [category.id, category.name, JSON.stringify(category.translations || {}), index],
       );
     }
 
     for (const [index, product] of normalized.products.entries()) {
       await client.query(
         `INSERT INTO products
-          (id, name, brief, price, category, in_stock, featured, images, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+          (id, name, brief, brief_translations, price, category, in_stock, featured, images, color_options, sort_order)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11)`,
         [
           product.id,
           product.name,
           product.brief,
+          JSON.stringify(product.briefTranslations || {}),
           product.price,
           product.category,
           product.inStock,
           product.featured,
           JSON.stringify(product.images),
+          JSON.stringify(product.colorOptions),
           index,
         ],
       );

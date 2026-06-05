@@ -3,6 +3,8 @@ import type { Category } from '../types';
 import { categories as defaultCategories } from '../data';
 
 import { API_BASE_URL } from '../utils/api';
+import { useLanguage } from '../i18n';
+import { getLocalizedCategoryName } from '../utils/productDisplay';
 
 const categories = ref<Category[]>([...defaultCategories]);
 let lastSerialized = JSON.stringify(categories.value);
@@ -17,6 +19,11 @@ function normalize(value: unknown): Category[] {
     .map((item) => ({
       id: typeof item?.id === 'string' ? item.id.trim() : '',
       name: typeof item?.name === 'string' ? item.name.trim() : '',
+      translations: item && typeof item === 'object' && (item as { translations?: unknown }).translations && typeof (item as { translations?: unknown }).translations === 'object'
+        ? Object.fromEntries(Object.entries((item as { translations: Record<string, unknown> }).translations)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim()))
+          .map(([key, value]) => [key, value.trim()]))
+        : undefined,
     }))
     .filter((item) => item.id && item.name && !seen.has(item.id) && seen.add(item.id));
 }
@@ -65,7 +72,9 @@ export function loadCategories() {
 }
 
 export function getCategoryName(categoryId: string) {
-  return categories.value.find((category) => category.id === categoryId)?.name || categoryId;
+  const { lang } = useLanguage();
+  const category = categories.value.find((item) => item.id === categoryId);
+  return getLocalizedCategoryName(categoryId, category?.name || categoryId, lang.value, category?.translations);
 }
 
 export function useCategories() {

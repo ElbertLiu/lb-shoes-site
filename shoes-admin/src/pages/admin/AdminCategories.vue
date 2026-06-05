@@ -3,30 +3,40 @@ import { computed, reactive, ref } from 'vue';
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import AdminLayout from '../../layouts/AdminLayout.vue';
+import { languageOptions } from '../../i18n';
 import { useCategories } from '../../stores/categories';
 import { useProducts } from '../../stores/products';
 import type { Category } from '../../types';
+import { cleanTranslations } from '../../utils/translation';
 
 const { categories: categoryList, setCategories } = useCategories();
 const { products } = useProducts();
 const showForm = ref(false);
 const keyword = ref('');
 const formRef = ref();
-const formData = reactive<Partial<Category>>({ id: '', name: '' });
+const formData = reactive<Partial<Category>>({ id: '', name: '', translations: {} });
+const translationLanguageOptions = languageOptions.filter((option) => option.code !== 'zh');
 const isEditing = computed(() => categoryList.value.some((category) => category.id === formData.id));
 const filteredCategories = computed(() => {
   const q = keyword.value.trim().toLowerCase();
   if (!q) {
     return categoryList.value;
   }
-  return categoryList.value.filter((category) => category.id.toLowerCase().includes(q) || category.name.toLowerCase().includes(q));
+  return categoryList.value.filter((category) => {
+    const translationText = Object.values(category.translations || {}).join(' ').toLowerCase();
+    return category.id.toLowerCase().includes(q)
+      || category.name.toLowerCase().includes(q)
+      || translationText.includes(q);
+  });
 });
 const rules = {
   name: [{ required: true, message: '请填写分类名称', trigger: 'blur' }],
 };
 
 const productCount = (categoryId: string) => products.value.filter((product) => product.category === categoryId).length;
-const resetForm = (category?: Category) => Object.assign(formData, category || { id: '', name: '' });
+const resetForm = (category?: Category) => Object.assign(formData, category
+  ? { ...category, translations: { ...(category.translations || {}) } }
+  : { id: '', name: '', translations: {} });
 const openCreate = () => {
   resetForm();
   showForm.value = true;
@@ -51,6 +61,7 @@ const handleSubmit = async () => {
   const saved = {
     id: formData.id || `c${Date.now()}`,
     name: formData.name || '',
+    translations: cleanTranslations(formData.translations),
   };
   const nextCategories = isEditing.value
     ? categoryList.value.map((category) => category.id === saved.id ? saved : category)
@@ -79,6 +90,22 @@ const handleSubmit = async () => {
       <el-table :data="filteredCategories" stripe>
         <el-table-column prop="id" label="ID" width="120" />
         <el-table-column prop="name" label="分类名称" min-width="180" />
+        <el-table-column label="多语言名称" min-width="260">
+          <template #default="{ row }">
+            <div v-if="Object.keys(row.translations || {}).length" class="flex flex-wrap gap-1">
+              <el-tag
+                v-for="option in translationLanguageOptions"
+                v-show="row.translations?.[option.code]"
+                :key="option.code"
+                size="small"
+                effect="plain"
+              >
+                {{ option.flag }} {{ row.translations?.[option.code] }}
+              </el-tag>
+            </div>
+            <span v-else class="text-[#909399]">未填写</span>
+          </template>
+        </el-table-column>
         <el-table-column label="商品数量" width="120">
           <template #default="{ row }">{{ productCount(row.id) }}</template>
         </el-table-column>
@@ -98,6 +125,23 @@ const handleSubmit = async () => {
       <el-form ref="formRef" :model="formData" :rules="rules" label-width="88px">
         <el-form-item label="分类名称" prop="name">
           <el-input v-model="formData.name" placeholder="请输入分类名称" />
+        </el-form-item>
+        <el-form-item label="多语言">
+          <div class="flex w-full flex-col gap-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-[#909399]">留空时官网会显示默认分类名</span>
+            </div>
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <el-input
+                v-for="option in translationLanguageOptions"
+                :key="option.code"
+                v-model="formData.translations![option.code]"
+                :placeholder="`${option.flag} ${option.name}`"
+              >
+                <template #prepend>{{ option.code.toUpperCase() }}</template>
+              </el-input>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
 
