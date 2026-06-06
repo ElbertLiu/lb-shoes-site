@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
 import { useLanguage } from '../i18n';
+import { useEmblaGallery } from '../composables/useEmblaGallery';
 import type { Product } from '../types';
 import { resolveProductImage } from '../utils/api';
-import { formatProductPrice, getProductCardGalleryImages, getProductCardImage, getProductTitle } from '../utils/productDisplay';
+import { formatProductPrice, getProductCardGalleryImages, getProductTitle } from '../utils/productDisplay';
 
 const props = defineProps<{
   product: Product;
@@ -12,22 +13,19 @@ const props = defineProps<{
 }>();
 
 const { lang } = useLanguage();
-const selectedImageIndex = ref(0);
-
-const selectCardImage = (index: number) => {
-  selectedImageIndex.value = index;
-};
-
-const shiftCardImage = (direction: number) => {
-  const gallery = getProductCardGalleryImages(props.product);
-  if (gallery.length <= 1) {
-    return;
-  }
-  selectedImageIndex.value = (selectedImageIndex.value + direction + gallery.length) % gallery.length;
-};
+const galleryImages = computed(() => getProductCardGalleryImages(props.product));
+const {
+  currentIndex: selectedImageIndex,
+  displayImages,
+  emblaRef,
+  hasMultipleImages,
+  scrollNext,
+  scrollPrev,
+  scrollTo: selectCardImage,
+} = useEmblaGallery(galleryImages);
 
 const selectColor = (thumbnail: string) => {
-  const index = getProductCardGalleryImages(props.product).findIndex((image) => image === thumbnail);
+  const index = galleryImages.value.findIndex((image) => image === thumbnail);
   selectCardImage(index >= 0 ? index : 0);
 };
 </script>
@@ -35,18 +33,24 @@ const selectColor = (thumbnail: string) => {
 <template>
   <div class="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
     <RouterLink :to="`/product/${product.id}`" class="relative block aspect-square overflow-hidden bg-gray-50">
-      <img :src="resolveProductImage([getProductCardImage(product, selectedImageIndex)])" :alt="product.id" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
-      <button v-if="getProductCardGalleryImages(product).length > 1" type="button" class="absolute left-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="shiftCardImage(-1)">
+      <div ref="emblaRef" class="h-full overflow-hidden">
+        <div class="flex h-full touch-pan-y">
+          <div v-for="(image, index) in displayImages" :key="`${product.id}-${image || 'fallback'}-${index}`" class="h-full min-w-0 flex-[0_0_100%] overflow-hidden">
+            <img :src="resolveProductImage([image])" :alt="product.id" class="h-full w-full object-cover" loading="lazy" draggable="false" />
+          </div>
+        </div>
+      </div>
+      <button v-if="hasMultipleImages" type="button" class="absolute left-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="scrollPrev">
         <ChevronLeft class="h-5 w-5" />
       </button>
-      <button v-if="getProductCardGalleryImages(product).length > 1" type="button" class="absolute right-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="shiftCardImage(1)">
+      <button v-if="hasMultipleImages" type="button" class="absolute right-0 top-1/2 flex h-8 w-7 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click.prevent.stop="scrollNext">
         <ChevronRight class="h-5 w-5" />
       </button>
     </RouterLink>
 
-    <div v-if="getProductCardGalleryImages(product).length > 1" class="hidden gap-1 px-2 pt-1.5 lg:flex">
+    <div v-if="hasMultipleImages" class="hidden gap-1 px-2 pt-1.5 lg:flex">
       <button
-        v-for="(_, index) in getProductCardGalleryImages(product)"
+        v-for="(_, index) in galleryImages"
         :key="index"
         type="button"
         class="h-1 w-full rounded-full transition-colors"
@@ -68,7 +72,7 @@ const selectColor = (thumbnail: string) => {
           :key="`${product.id}-${color.thumbnail}-${index}`"
           type="button"
           class="h-8 w-8 overflow-hidden rounded border bg-gray-100 transition-colors"
-          :class="getProductCardImage(product, selectedImageIndex) === color.thumbnail ? 'border-gray-900' : 'border-gray-200 hover:border-gray-400'"
+          :class="galleryImages[selectedImageIndex] === color.thumbnail ? 'border-gray-900' : 'border-gray-200 hover:border-gray-400'"
           :title="`c${index + 1}`"
           @click.prevent.stop="selectColor(color.thumbnail)"
         >

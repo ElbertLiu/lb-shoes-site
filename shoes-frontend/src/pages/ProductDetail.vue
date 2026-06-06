@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-vue-next';
 import ClientLayout from '../layouts/ClientLayout.vue';
@@ -7,6 +7,7 @@ import { useLanguage } from '../i18n';
 import { useCategories } from '../stores/categories';
 import { useProducts } from '../stores/products';
 import { useToast } from '../composables/useToast';
+import { useEmblaGallery } from '../composables/useEmblaGallery';
 import { resolveMediaUrl, resolveProductImage } from '../utils/api';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { getProductDescription, getProductTitle } from '../utils/productDisplay';
@@ -16,17 +17,6 @@ const { t, lang } = useLanguage();
 const { getCategoryName } = useCategories();
 const { products, fetchProductById } = useProducts();
 const { success } = useToast();
-const currentImageIndex = ref(0);
-const touchStartX = ref(0);
-const touchStartY = ref(0);
-const touchEndX = ref(0);
-const touchEndY = ref(0);
-const dragOffsetX = ref(0);
-const isDraggingGallery = ref(false);
-const isGalleryTransitionEnabled = ref(true);
-const galleryTrackIndex = ref(0);
-const isGallerySwipeIntent = ref(false);
-const galleryTouchDirection = ref<'pending' | 'horizontal' | 'vertical'>('pending');
 const whatsappContact = (import.meta.env.VITE_WHATSAPP_CONTACT as string | undefined)?.trim() || '+86 138-0000-0000';
 const facebookContact = (import.meta.env.VITE_FACEBOOK_CONTACT as string | undefined)?.trim() || 'ShoeFactory123';
 const productId = computed(() => String(route.params.id || ''));
@@ -38,138 +28,19 @@ const galleryImages = computed(() => {
   const seen = new Set<string>();
   return [...productImages.value, ...colorImages.value].filter((image) => !seen.has(image) && seen.add(image));
 });
-const displayGalleryImages = computed(() => galleryImages.value.length ? galleryImages.value : ['']);
-const hasMultipleImages = computed(() => galleryImages.value.length > 1);
-const loopedGalleryImages = computed(() => {
-  if (!hasMultipleImages.value) {
-    return displayGalleryImages.value;
-  }
-  return [
-    galleryImages.value[galleryImages.value.length - 1],
-    ...galleryImages.value,
-    galleryImages.value[0],
-  ];
-});
-const galleryTrackStyle = computed(() => {
-  const count = Math.max(loopedGalleryImages.value.length, 1);
-  return {
-    width: `${count * 100}%`,
-    transform: `translate3d(calc(${-galleryTrackIndex.value * (100 / count)}% + ${dragOffsetX.value}px), 0, 0)`,
-  };
-});
-const gallerySlideStyle = computed(() => {
-  const count = Math.max(loopedGalleryImages.value.length, 1);
-  return {
-    width: `${100 / count}%`,
-  };
-});
+const {
+  currentIndex: currentImageIndex,
+  displayImages: displayGalleryImages,
+  emblaRef: galleryEmblaRef,
+  hasMultipleImages,
+  scrollNext: nextImage,
+  scrollPrev: prevImage,
+  scrollTo: selectGalleryImage,
+} = useEmblaGallery(galleryImages);
 const productCategoryName = computed(() => product.value ? getCategoryName(product.value.category) : '');
 const productTitle = computed(() => product.value ? getProductTitle(product.value, productCategoryName.value, lang.value) : '');
 const productDescription = computed(() => product.value ? getProductDescription(product.value, lang.value) : '');
 
-const restoreGalleryTransition = () => {
-  void nextTick().then(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        isGalleryTransitionEnabled.value = true;
-      });
-    });
-  });
-};
-const jumpToGalleryTrackIndex = (index: number) => {
-  isGalleryTransitionEnabled.value = false;
-  galleryTrackIndex.value = index;
-  restoreGalleryTransition();
-};
-const nextImage = () => {
-  if (hasMultipleImages.value) {
-    currentImageIndex.value = (currentImageIndex.value + 1) % galleryImages.value.length;
-    galleryTrackIndex.value += 1;
-  }
-};
-const prevImage = () => {
-  if (hasMultipleImages.value) {
-    currentImageIndex.value = currentImageIndex.value === 0 ? galleryImages.value.length - 1 : currentImageIndex.value - 1;
-    galleryTrackIndex.value -= 1;
-  }
-};
-const selectGalleryImage = (index: number) => {
-  currentImageIndex.value = index;
-  jumpToGalleryTrackIndex(hasMultipleImages.value ? index + 1 : index);
-};
-const resetLoopPosition = () => {
-  if (!hasMultipleImages.value) return;
-  if (galleryTrackIndex.value === 0) {
-    jumpToGalleryTrackIndex(galleryImages.value.length);
-  } else if (galleryTrackIndex.value === galleryImages.value.length + 1) {
-    jumpToGalleryTrackIndex(1);
-  }
-};
-const onGalleryTouchStart = (event: TouchEvent) => {
-  if (!hasMultipleImages.value || !event.touches.length) return;
-  const touch = event.touches[0];
-  isDraggingGallery.value = true;
-  isGallerySwipeIntent.value = false;
-  galleryTouchDirection.value = 'pending';
-  dragOffsetX.value = 0;
-  touchStartX.value = touch.clientX;
-  touchStartY.value = touch.clientY;
-  touchEndX.value = touch.clientX;
-  touchEndY.value = touch.clientY;
-};
-const onGalleryTouchMove = (event: TouchEvent) => {
-  if (!hasMultipleImages.value || !event.touches.length) return;
-  const touch = event.touches[0];
-  touchEndX.value = touch.clientX;
-  touchEndY.value = touch.clientY;
-  const deltaX = touchEndX.value - touchStartX.value;
-  const deltaY = touchEndY.value - touchStartY.value;
-  const absX = Math.abs(deltaX);
-  const absY = Math.abs(deltaY);
-  const directionThreshold = 8;
-  if (galleryTouchDirection.value === 'pending' && absX + absY > directionThreshold) {
-    galleryTouchDirection.value = absY > absX * 1.35 ? 'vertical' : 'horizontal';
-  }
-
-  if (galleryTouchDirection.value === 'vertical') {
-    dragOffsetX.value = 0;
-    return;
-  }
-
-  if (event.cancelable) {
-    event.preventDefault();
-  }
-
-  const isHorizontalIntent = galleryTouchDirection.value === 'horizontal';
-
-  isGallerySwipeIntent.value = isGallerySwipeIntent.value || isHorizontalIntent;
-  dragOffsetX.value = isGallerySwipeIntent.value ? deltaX : 0;
-};
-const onGalleryTouchEnd = () => {
-  if (!hasMultipleImages.value) return;
-  const deltaX = touchEndX.value - touchStartX.value;
-  const deltaY = touchEndY.value - touchStartY.value;
-  const swipeThreshold = 28;
-  const isHorizontalSwipe = galleryTouchDirection.value === 'horizontal' && Math.abs(deltaX) > swipeThreshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.15;
-
-  isDraggingGallery.value = false;
-  isGallerySwipeIntent.value = false;
-  galleryTouchDirection.value = 'pending';
-  dragOffsetX.value = 0;
-
-  if (!isHorizontalSwipe) return;
-  if (deltaX < 0) {
-    nextImage();
-  } else {
-    prevImage();
-  }
-};
-const onGalleryTouchCancel = () => {
-  isDraggingGallery.value = false;
-  isGallerySwipeIntent.value = false;
-  galleryTouchDirection.value = 'pending';
-  dragOffsetX.value = 0;
-};
 const selectColorImage = (thumbnail: string) => {
   const index = galleryImages.value.findIndex((image) => image === thumbnail);
   selectGalleryImage(index >= 0 ? index : 0);
@@ -180,21 +51,9 @@ const copyToClipboard = async (text: string) => {
 };
 
 watch(productId, (id) => {
-  currentImageIndex.value = 0;
-  galleryTrackIndex.value = hasMultipleImages.value ? 1 : 0;
-  dragOffsetX.value = 0;
-  isDraggingGallery.value = false;
-  isGalleryTransitionEnabled.value = true;
-  isGallerySwipeIntent.value = false;
-  galleryTouchDirection.value = 'pending';
   if (id) {
     void fetchProductById(id);
   }
-}, { immediate: true });
-
-watch(galleryImages, () => {
-  currentImageIndex.value = 0;
-  jumpToGalleryTrackIndex(hasMultipleImages.value ? 1 : 0);
 }, { immediate: true });
 </script>
 
@@ -216,19 +75,15 @@ watch(galleryImages, () => {
         <div class="flex w-full flex-col gap-4 lg:w-1/2">
           <div
             class="group relative aspect-square touch-pan-y overflow-hidden rounded-2xl bg-gray-50 md:aspect-[4/3] lg:aspect-square"
-            @touchstart.passive="onGalleryTouchStart"
-            @touchmove="onGalleryTouchMove"
-            @touchend.passive="onGalleryTouchEnd"
-            @touchcancel.passive="onGalleryTouchCancel"
           >
             <div
-              class="flex h-full will-change-transform"
-              :class="isDraggingGallery || !isGalleryTransitionEnabled ? 'transition-none' : 'transition-transform duration-[850ms] ease-[cubic-bezier(0.16,1,0.3,1)]'"
-              :style="galleryTrackStyle"
-              @transitionend.self="resetLoopPosition"
+              ref="galleryEmblaRef"
+              class="h-full overflow-hidden"
             >
-              <div v-for="(image, index) in loopedGalleryImages" :key="`${image || 'fallback'}-${index}`" class="h-full shrink-0" :style="gallerySlideStyle">
-                <img :src="resolveProductImage([image])" :alt="product.name" class="h-full w-full object-cover" draggable="false" />
+              <div class="flex h-full touch-pan-y">
+                <div v-for="(image, index) in displayGalleryImages" :key="`${image || 'fallback'}-${index}`" class="h-full min-w-0 flex-[0_0_100%]">
+                  <img :src="resolveProductImage([image])" :alt="product.name" class="h-full w-full object-cover" draggable="false" />
+                </div>
               </div>
             </div>
             <button v-if="hasMultipleImages" class="absolute left-0 top-1/2 flex h-10 w-9 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/70 text-gray-900 opacity-0 shadow-sm transition-opacity hover:bg-white/90 group-hover:opacity-100" @click="prevImage">
